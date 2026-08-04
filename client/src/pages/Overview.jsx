@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { API, createSocket } from '../config/api.js';
 import './Overview.css';
 
-const API = '/api/pairs';
 const LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function isWithinLiveWindow(sentAt) {
@@ -54,7 +54,7 @@ function Overview() {
   }, []);
 
   useEffect(() => {
-    const socket = io({ path: '/socket.io' });
+    const socket = createSocket(io);
 
     socket.on('countdown:update', (data) => setCountdown(data));
     socket.on('review:update', (data) => setReview(data));

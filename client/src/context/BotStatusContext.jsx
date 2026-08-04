@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import axios from 'axios';
+import { apiUrl } from '../config/api.js';
 
 const BotStatusContext = createContext(null);
 
@@ -10,7 +11,7 @@ export function BotStatusProvider({ children }) {
   const refresh = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/pairs/status');
+      const res = await axios.get(apiUrl('/api/pairs/status'));
       setStatus(res.data);
     } catch {
       setStatus(null);

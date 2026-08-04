@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API } from '../config/api.js';
 import './History.css';
-
-const API = '/api/pairs';
 
 function formatDateTime(iso) {
   if (!iso) return '—';
