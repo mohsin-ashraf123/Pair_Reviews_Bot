@@ -97,10 +97,11 @@
 }
 
 .schedule-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem;
-  background: #fafbfc;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.1rem;
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
 }
 
 .schedule-card-head {
@@ -123,10 +124,10 @@
 }
 
 .schedule-time-badge {
-  padding: 0.25rem 0.55rem;
+  padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;

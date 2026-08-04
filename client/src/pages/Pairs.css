@@ -35,13 +35,18 @@
 }
 
 .month-select {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #fff;
+  padding: 0.5rem 0.85rem;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
   font-size: 0.875rem;
   color: var(--text);
   min-width: 160px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  padding-right: 2rem;
 }
 
 .pairs-table-wrap {
@@ -64,16 +69,16 @@
 }
 
 .pairs-table th {
-  background: #f8fafc;
+  background: var(--bg);
   font-weight: 600;
-  color: var(--text-muted);
-  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .pairs-table tbody tr:hover {
-  background: #fafbfc;
+  background: rgba(0, 122, 255, 0.03);
 }
 
 .col-date {
@@ -105,11 +110,12 @@
 
 .pair-chip {
   display: inline-block;
-  padding: 0.25rem 0.55rem;
-  background: #f1f5f9;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 0.28rem 0.6rem;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -121,12 +127,12 @@
 
 .feedback.err {
   margin: 0;
-  padding: 0.65rem 0.75rem;
-  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
   font-size: 0.875rem;
-  background: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
+  background: var(--danger-soft);
+  color: #c41e12;
+  border: 0.5px solid rgba(255, 59, 48, 0.2);
 }
 
 @media (max-width: 768px) {
@@ -141,7 +147,6 @@
   .pairs-table-wrap {
     margin-bottom: 0.5rem;
   }
-}
 
   .pairs-table th,
   .pairs-table td {

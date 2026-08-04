@@ -94,12 +94,12 @@
 }
 
 .performance-table th {
-  background: #f8fafc;
+  background: var(--bg);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -143,21 +143,21 @@
 }
 
 .day-cell.cell-present {
-  background: #f0fdf4;
-  color: #15803d;
+  background: var(--success-soft);
+  color: #248a3d;
   font-weight: 700;
 }
 
 .day-cell.cell-absent {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--danger-soft);
+  color: #c41e12;
   font-size: 0.7rem;
   line-height: 1.25;
 }
 
 .day-cell.cell-pending {
-  background: #fffbeb;
-  color: #b45309;
+  background: var(--warning-soft);
+  color: #c93400;
 }
 
 .day-cell.cell-future,

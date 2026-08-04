@@ -18,26 +18,27 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.5rem 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
   background: var(--surface);
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .history-tab.active {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
+  background: var(--primary-soft);
+  border-color: transparent;
+  color: var(--primary);
 }
 
 .history-tab.reviews-tab.active {
-  background: #ecfdf5;
-  border-color: #6ee7b7;
-  color: #047857;
+  background: var(--success-soft);
+  border-color: transparent;
+  color: #248a3d;
 }
 
 .history-tab-count {
@@ -99,10 +100,11 @@
 
 .review-history-item {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid #10b981;
-  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--success);
+  border-radius: var(--radius-lg);
   padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .review-history-head {
@@ -171,9 +173,10 @@
 
 .history-item {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .history-item-head {
