@@ -144,18 +144,43 @@
     font-size: 0.75rem;
   }
 
+  .pairs-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pairs-table {
+    width: max-content;
+    min-width: 100%;
+  }
+
   .pairs-table th,
   .pairs-table td {
-    padding: 0.5rem 0.45rem;
+    padding: 0.5rem 0.55rem;
     font-size: 0.76rem;
+    white-space: nowrap;
+    vertical-align: middle;
   }
 
   .col-num {
     width: 26px;
   }
 
+  .col-pairs {
+    min-width: 420px;
+  }
+
+  .pairs-cell {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    width: max-content;
+  }
+
   .pair-chip {
+    flex-shrink: 0;
     font-size: 0.72rem;
     padding: 0.18rem 0.42rem;
+    white-space: nowrap;
   }
 }
