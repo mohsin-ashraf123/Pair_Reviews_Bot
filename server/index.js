@@ -22,10 +22,17 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Element Pair Review Bot API',
+    uptime: process.uptime(),
+  });
+});
+
+app.get('/api/ready', (req, res) => {
   const mongoReady = mongoose.connection.readyState === 1;
   res.status(mongoReady ? 200 : 503).json({
-    status: mongoReady ? 'ok' : 'degraded',
-    message: 'Element Pair Review Bot API',
+    ready: mongoReady,
     mongo: mongoReady ? 'connected' : 'disconnected',
   });
 });

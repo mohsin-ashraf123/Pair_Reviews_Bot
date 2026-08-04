@@ -7,11 +7,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "install:server": "npm install --prefix server",
+    "postinstall": "npm install --prefix server --omit=dev",
     "install:client": "npm install --prefix client --include=dev",
-    "install:all": "npm run install:server && npm run install:client",
     "build:client": "npm run build --prefix client",
-    "build": "npm run install:all && npm run build:client",
+    "build": "npm run install:client && npm run build:client",
     "start": "node server/index.js"
   }
 }
