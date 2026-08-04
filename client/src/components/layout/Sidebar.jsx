@@ -2,12 +2,70 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
-  { label: 'Overview', short: 'Home', to: '/dashboard' },
-  { label: 'Pairs', short: 'Pairs', to: '/dashboard/pairs' },
-  { label: 'History', short: 'History', to: '/dashboard/history' },
-  { label: 'Performance', short: 'Perf', to: '/dashboard/performance' },
-  { label: 'Settings', short: 'Settings', to: '/dashboard/settings' },
+  { label: 'Overview', short: 'Home', to: '/dashboard', icon: 'home' },
+  { label: 'Pairs', short: 'Pairs', to: '/dashboard/pairs', icon: 'pairs' },
+  { label: 'History', short: 'History', to: '/dashboard/history', icon: 'history' },
+  { label: 'Performance', short: 'Stats', to: '/dashboard/performance', icon: 'stats' },
+  { label: 'Settings', short: 'Settings', to: '/dashboard/settings', icon: 'settings' },
 ];
+
+function TabIcon({ name, active }) {
+  const stroke = active ? 'var(--primary)' : '#8e8e93';
+  const props = {
+    width: 24,
+    height: 24,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke,
+    strokeWidth: active ? 2.2 : 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  };
+
+  switch (name) {
+    case 'home':
+      return (
+        <svg {...props}>
+          <path d="M4 10.5 12 4l8 6.5" />
+          <path d="M6 9.5V19h12V9.5" />
+        </svg>
+      );
+    case 'pairs':
+      return (
+        <svg {...props}>
+          <circle cx="8" cy="9" r="2.5" />
+          <circle cx="16" cy="9" r="2.5" />
+          <path d="M5 19c0-2.2 1.8-4 4-4" />
+          <path d="M19 19c0-2.2-1.8-4-4-4" />
+        </svg>
+      );
+    case 'history':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v4l2.5 2.5" />
+        </svg>
+      );
+    case 'stats':
+      return (
+        <svg {...props}>
+          <path d="M5 19V11" />
+          <path d="M12 19V5" />
+          <path d="M19 19v-7" />
+        </svg>
+      );
+    case 'settings':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 
 function Sidebar() {
   const { user, logout } = useAuth();
@@ -53,17 +111,24 @@ function Sidebar() {
         </div>
       </aside>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">
+      <nav className="mobile-tab-bar" aria-label="Mobile navigation">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/dashboard'}
             className={({ isActive }) =>
-              `mobile-nav-link${isActive ? ' active' : ''}`
+              `mobile-tab${isActive ? ' active' : ''}`
             }
           >
-            {item.short}
+            {({ isActive }) => (
+              <>
+                <span className="mobile-tab-icon">
+                  <TabIcon name={item.icon} active={isActive} />
+                </span>
+                <span className="mobile-tab-label">{item.short}</span>
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

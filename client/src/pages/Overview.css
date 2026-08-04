@@ -259,9 +259,39 @@
   .overview-bottom {
     flex: none;
   }
+}
+
+@media (max-width: 768px) {
+  .overview-page {
+    height: auto;
+    min-height: min-content;
+    padding-bottom: 0.25rem;
+  }
+
+  .overview-top,
+  .overview-bottom {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .overview-bottom {
+    flex: none;
+  }
+
+  .live-panel,
+  .review-panel {
+    overflow: visible;
+    min-height: auto;
+  }
 
   .live-messages {
-    max-height: 220px;
+    max-height: none;
+    overflow: visible;
+    flex: none;
+  }
+
+  .message-preview {
+    max-height: none;
   }
 }
 

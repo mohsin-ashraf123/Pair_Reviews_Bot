@@ -220,4 +220,9 @@
   .month-select {
     width: 100%;
   }
+
+  .performance-table-wrap {
+    max-height: none;
+    margin-bottom: 0.5rem;
+  }
 }
