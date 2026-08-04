@@ -1,31 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API } from '../config/api.js';
+import MonthPicker from '../components/ui/MonthPicker.jsx';
+import { MONTH_NAMES, buildMonthOptions, todayDateKey } from '../utils/months.js';
 import './Performance.css';
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function buildMonthOptions(centerYear) {
-  const options = [];
-  for (let y = centerYear - 1; y <= centerYear + 1; y += 1) {
-    for (let m = 1; m <= 12; m += 1) {
-      options.push({
-        value: `${y}-${m}`,
-        label: `${MONTH_NAMES[m - 1]} ${y}`,
-      });
-    }
-  }
-  return options;
-}
 
 function cellLabel(cell) {
   if (!cell) return '—';
   if (cell.status === 'present') return 'Present';
   if (cell.status === 'absent') return `Absent · ${cell.pairLabel}`;
   if (cell.status === 'pending') return 'Pending';
-  if (cell.status === 'future') return '—';
   if (cell.status === 'no_data') return 'N/A';
   return '—';
 }
@@ -67,8 +51,13 @@ function Performance() {
     return buildMonthOptions(year);
   }, [data?.year]);
 
-  const handleMonthChange = (e) => {
-    const value = e.target.value;
+  const visibleDays = useMemo(() => {
+    if (!data?.days) return [];
+    const today = todayDateKey();
+    return data.days.filter((day) => day.dateKey <= today);
+  }, [data?.days]);
+
+  const handleMonthChange = (value) => {
     setSelected(value);
     const [year, month] = value.split('-').map(Number);
     loadMonth(year, month);
@@ -89,33 +78,26 @@ function Performance() {
   return (
     <div className="performance-page">
       <div className="performance-header">
-        <div>
+        <div className="performance-header-text">
           <h2>{monthLabel || 'Monthly Performance'}</h2>
-          <p className="muted">
-            Review attendance by member — absent days show the assigned pair
+          <p className="muted performance-subtitle">
+            Review attendance — absent days show assigned pair
           </p>
         </div>
-        <select
-          className="month-select"
+        <MonthPicker
+          options={monthOptions}
           value={selected || ''}
           onChange={handleMonthChange}
           disabled={loading}
-        >
-          {monthOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       {error && <p className="feedback err">{error}</p>}
 
       <div className="performance-legend">
         <span className="legend-item present">Present</span>
-        <span className="legend-item absent">Absent (with pair)</span>
+        <span className="legend-item absent">Absent</span>
         <span className="legend-item pending">Pending</span>
-        <span className="legend-item neutral">Future / N/A</span>
       </div>
 
       <div className="content-card performance-table-wrap">
@@ -126,7 +108,7 @@ function Performance() {
             <thead>
               <tr>
                 <th className="sticky-col">Member</th>
-                {data?.days?.map((day) => (
+                {visibleDays.map((day) => (
                   <th key={day.dateKey} className="day-col" title={day.dateKey}>
                     <span className="day-head">{day.dayName}</span>
                     <span className="day-sub">{day.shortDate}</span>
@@ -142,7 +124,7 @@ function Performance() {
                 data.rows.map((row) => (
                   <tr key={row.member}>
                     <td className="sticky-col member-name">{row.member}</td>
-                    {data.days.map((day) => {
+                    {visibleDays.map((day) => {
                       const cell = row.cells[day.dateKey];
                       return (
                         <td
@@ -158,8 +140,7 @@ function Performance() {
                             </span>
                           )}
                           {cell?.status === 'pending' && '…'}
-                          {(cell?.status === 'future' ||
-                            cell?.status === 'no_data' ||
+                          {(cell?.status === 'no_data' ||
                             cell?.status === 'not_assigned') &&
                             '—'}
                         </td>
@@ -174,7 +155,7 @@ function Performance() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={(data?.days?.length || 0) + 4} className="empty-row">
+                  <td colSpan={visibleDays.length + 4} className="empty-row">
                     No performance data for this month
                   </td>
                 </tr>

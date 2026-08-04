@@ -1,24 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API } from '../config/api.js';
+import MonthPicker from '../components/ui/MonthPicker.jsx';
+import { MONTH_NAMES, buildMonthOptions } from '../utils/months.js';
 import './Pairs.css';
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function buildMonthOptions(centerYear) {
-  const options = [];
-  for (let y = centerYear - 1; y <= centerYear + 1; y += 1) {
-    for (let m = 1; m <= 12; m += 1) {
-      options.push({
-        value: `${y}-${m}`,
-        label: `${MONTH_NAMES[m - 1]} ${y}`,
-      });
-    }
-  }
-  return options;
-}
 
 function Pairs() {
   const [data, setData] = useState(null);
@@ -52,8 +37,7 @@ function Pairs() {
     return buildMonthOptions(year);
   }, [data?.year]);
 
-  const handleMonthChange = (e) => {
-    const value = e.target.value;
+  const handleMonthChange = (value) => {
     setSelected(value);
     const [year, month] = value.split('-').map(Number);
     loadMonth(year, month);
@@ -74,29 +58,23 @@ function Pairs() {
   return (
     <div className="pairs-page">
       <div className="pairs-header">
-        <div>
+        <div className="pairs-header-text">
           <h2>{monthLabel || 'Monthly Pairs'}</h2>
-          <p className="muted">
-            Full weekday sequence for this month — Saturday &amp; Sunday off
+          <p className="muted pairs-subtitle">
+            Weekdays only — Sat &amp; Sun off
+            {data?.schedule?.length > 0 && (
+              <span className="pairs-count-inline">
+                {' · '}{data.schedule.length} working days
+              </span>
+            )}
           </p>
-          {data?.schedule?.length > 0 && (
-            <p className="muted pairs-count">
-              {data.schedule.length} working days in {monthLabel}
-            </p>
-          )}
         </div>
-        <select
-          className="month-select"
+        <MonthPicker
+          options={monthOptions}
           value={selected || ''}
           onChange={handleMonthChange}
           disabled={loading}
-        >
-          {monthOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       {error && <p className="feedback err">{error}</p>}

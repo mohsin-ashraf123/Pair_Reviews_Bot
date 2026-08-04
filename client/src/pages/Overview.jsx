@@ -131,25 +131,27 @@ function Overview() {
         <section className="overview-card live-panel">
           <h2>Live Room Messages</h2>
           <p className="overview-label">Last 24 hours — older messages move to History</p>
-          <div className="live-messages">
-            {messages.filter((m) => isWithinLiveWindow(m.sentAt)).length === 0 ? (
-              <p className="muted live-empty">No messages in the last 24 hours…</p>
-            ) : (
-              messages
-                .filter((m) => isWithinLiveWindow(m.sentAt))
-                .map((msg) => (
-                <div
-                  key={msg.eventId || msg.id}
-                  className={`live-msg ${msg.direction === 'out' ? 'out' : 'in'}`}
-                >
-                  <div className="live-msg-head">
-                    <span className="live-sender">{msg.senderName}</span>
-                    <span className="live-time">{formatTime(msg.sentAt)}</span>
+          <div className="live-messages-scroll">
+            <div className="live-messages">
+              {messages.filter((m) => isWithinLiveWindow(m.sentAt)).length === 0 ? (
+                <p className="muted live-empty">No messages in the last 24 hours…</p>
+              ) : (
+                messages
+                  .filter((m) => isWithinLiveWindow(m.sentAt))
+                  .map((msg) => (
+                  <div
+                    key={msg.eventId || msg.id}
+                    className={`live-msg ${msg.direction === 'out' ? 'out' : 'in'}`}
+                  >
+                    <div className="live-msg-head">
+                      <span className="live-sender">{msg.senderName}</span>
+                      <span className="live-time">{formatTime(msg.sentAt)}</span>
+                    </div>
+                    <p className="live-body">{msg.body}</p>
                   </div>
-                  <p className="live-body">{msg.body}</p>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
         </section>
 

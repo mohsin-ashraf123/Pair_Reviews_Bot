@@ -1,21 +1,39 @@
 .pairs-page {
   display: grid;
-  gap: 1.25rem;
+  gap: 0.75rem;
 }
 
-.pairs-count {
-  margin-top: 0.25rem;
+.pairs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pairs-header h2 {
+  margin: 0 0 0.15rem;
+  font-size: 1.05rem;
+}
+
+.pairs-subtitle {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.pairs-count-inline {
+  color: var(--text-secondary);
 }
 
 .table-loading {
-  padding: 2rem;
+  padding: 1.25rem;
   text-align: center;
 }
 
 .col-num {
-  width: 40px;
+  width: 32px;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .muted {
@@ -23,58 +41,38 @@
   font-size: 0.9rem;
 }
 
-.pairs-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.pairs-header h2 {
-  margin: 0 0 0.25rem;
-}
-
-.month-select {
-  padding: 0.5rem 0.85rem;
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  font-size: 0.875rem;
-  color: var(--text);
-  min-width: 160px;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  padding-right: 2rem;
-}
-
 .pairs-table-wrap {
   padding: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pairs-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .pairs-table th,
 .pairs-table td {
-  padding: 0.85rem 1rem;
+  padding: 0.65rem 0.75rem;
   text-align: left;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  border-bottom: 0.5px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .pairs-table th {
   background: var(--bg);
   font-weight: 600;
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .pairs-table tbody tr:hover {
@@ -82,39 +80,43 @@
 }
 
 .col-date {
-  white-space: nowrap;
   font-weight: 500;
 }
 
 .col-day {
-  white-space: nowrap;
   color: var(--text-muted);
-  width: 60px;
 }
 
 .col-lead {
-  white-space: nowrap;
   font-weight: 600;
-  width: 100px;
 }
 
 .col-pairs {
-  min-width: 280px;
+  min-width: 0;
 }
 
 .pairs-cell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  overflow-x: auto;
+  max-width: min(70vw, 520px);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.pairs-cell::-webkit-scrollbar {
+  display: none;
 }
 
 .pair-chip {
   display: inline-block;
-  padding: 0.28rem 0.6rem;
+  flex-shrink: 0;
+  padding: 0.24rem 0.55rem;
   background: var(--bg);
   border: 0.5px solid var(--border);
   border-radius: 999px;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -122,44 +124,54 @@
 .empty-row {
   text-align: center;
   color: var(--text-muted);
-  padding: 2rem !important;
+  padding: 1.5rem !important;
+  white-space: normal;
 }
 
 .feedback.err {
   margin: 0;
-  padding: 0.65rem 0.85rem;
+  padding: 0.55rem 0.75rem;
   border-radius: var(--radius);
-  font-size: 0.875rem;
+  font-size: 0.82rem;
   background: var(--danger-soft);
   color: #c41e12;
   border: 0.5px solid rgba(255, 59, 48, 0.2);
 }
 
 @media (max-width: 768px) {
+  .pairs-page {
+    gap: 0.55rem;
+  }
+
   .pairs-header {
     flex-direction: column;
+    gap: 0.5rem;
   }
 
-  .month-select {
-    width: 100%;
+  .pairs-header h2 {
+    font-size: 0.95rem;
   }
 
-  .pairs-table-wrap {
-    margin-bottom: 0.5rem;
+  .pairs-subtitle {
+    font-size: 0.75rem;
   }
 
   .pairs-table th,
   .pairs-table td {
-    padding: 0.65rem 0.5rem;
-    font-size: 0.82rem;
+    padding: 0.5rem 0.45rem;
+    font-size: 0.76rem;
   }
 
-  .col-pairs {
-    min-width: 180px;
+  .col-num {
+    width: 26px;
+  }
+
+  .pairs-cell {
+    max-width: 55vw;
   }
 
   .pair-chip {
-    font-size: 0.75rem;
-    padding: 0.2rem 0.4rem;
+    font-size: 0.72rem;
+    padding: 0.18rem 0.42rem;
   }
 }

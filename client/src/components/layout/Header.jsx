@@ -13,8 +13,11 @@ function Header() {
     <header className="header">
       <div className="header-left">
         <div className="header-logo">EP</div>
-        <div>
-          <h1 className="header-title">Element Pair Review Bot</h1>
+        <div className="header-title-wrap">
+          <h1 className="header-title">
+            <span className="header-title-full">Element Pair Review Bot</span>
+            <span className="header-title-short">Pair Review</span>
+          </h1>
           <p className="header-subtitle">Daily pair automation for Element</p>
         </div>
       </div>

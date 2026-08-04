@@ -151,33 +151,45 @@
 
 .message-preview {
   margin: 0.35rem 0 0;
-  padding: 0.75rem;
+  padding: 0.65rem;
   background: var(--bg);
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
   font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 0.78rem;
-  line-height: 1.5;
+  font-size: 0.76rem;
+  line-height: 1.45;
   white-space: pre-wrap;
-  max-height: 140px;
-  overflow: auto;
+  max-height: 120px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.live-panel,
-.review-panel {
+.live-panel {
   min-height: 0;
   overflow: hidden;
 }
 
-.live-messages {
+.review-panel {
+  min-height: 0;
+}
+
+.live-messages-scroll {
   flex: 1;
   min-height: 0;
+  max-height: 320px;
   overflow-y: auto;
+  margin-top: 0.45rem;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.live-messages {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  margin-top: 0.5rem;
-  padding-right: 0.25rem;
+  gap: 0.4rem;
+  padding: 0.5rem;
 }
 
 .live-empty {
@@ -266,33 +278,53 @@
   .overview-page {
     height: auto;
     min-height: min-content;
+    gap: 0.55rem;
     padding-bottom: 0.25rem;
+  }
+
+  .overview-card {
+    padding: 0.75rem 0.85rem;
+  }
+
+  .overview-card h2 {
+    font-size: 0.88rem;
+  }
+
+  .overview-label {
+    font-size: 0.72rem;
+  }
+
+  .countdown-bar {
+    padding: 0.65rem 0.85rem;
+  }
+
+  .countdown-timer {
+    font-size: 1.15rem;
   }
 
   .overview-top,
   .overview-bottom {
     grid-template-columns: 1fr;
     min-height: auto;
+    gap: 0.55rem;
   }
 
   .overview-bottom {
     flex: none;
   }
 
-  .live-panel,
-  .review-panel {
-    overflow: visible;
-    min-height: auto;
-  }
-
-  .live-messages {
-    max-height: none;
-    overflow: visible;
+  .live-messages-scroll {
+    max-height: 220px;
     flex: none;
   }
 
   .message-preview {
-    max-height: none;
+    max-height: 100px;
+  }
+
+  .pair-chip {
+    font-size: 0.74rem;
+    padding: 0.26rem 0.5rem;
   }
 }
 
