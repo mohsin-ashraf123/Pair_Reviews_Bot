@@ -43,13 +43,11 @@
 
 .pairs-table-wrap {
   padding: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 .pairs-table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -59,8 +57,7 @@
   padding: 0.65rem 0.75rem;
   text-align: left;
   border-bottom: 0.5px solid var(--border);
-  vertical-align: middle;
-  white-space: nowrap;
+  vertical-align: top;
 }
 
 .pairs-table th {
@@ -70,9 +67,6 @@
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  position: sticky;
-  top: 0;
-  z-index: 1;
 }
 
 .pairs-table tbody tr:hover {
@@ -81,44 +75,38 @@
 
 .col-date {
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .col-day {
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .col-lead {
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .col-pairs {
   min-width: 0;
+  white-space: normal;
 }
 
 .pairs-cell {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.35rem;
-  overflow-x: auto;
-  max-width: min(70vw, 520px);
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.pairs-cell::-webkit-scrollbar {
-  display: none;
 }
 
 .pair-chip {
   display: inline-block;
-  flex-shrink: 0;
   padding: 0.24rem 0.55rem;
   background: var(--bg);
   border: 0.5px solid var(--border);
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 500;
-  white-space: nowrap;
 }
 
 .empty-row {
@@ -164,10 +152,6 @@
 
   .col-num {
     width: 26px;
-  }
-
-  .pairs-cell {
-    max-width: 55vw;
   }
 
   .pair-chip {

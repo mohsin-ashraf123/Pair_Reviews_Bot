@@ -17,12 +17,9 @@ function Settings() {
   return (
     <div className="settings-page">
       <div className="settings-header">
-        <div>
-          <h2>Settings</h2>
-          <p className="muted">Bot connection and schedule configuration</p>
-        </div>
+        <h2>Settings</h2>
         <button type="button" className="refresh-btn" onClick={refresh}>
-          Refresh status
+          Refresh
         </button>
       </div>
 
