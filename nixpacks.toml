@@ -1,0 +1,12 @@
+# Fallback for Nixpacks / Railpack — monorepo with server + client
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm run install:all"]
+
+[phases.build]
+cmds = ["npm run build:client"]
+
+[start]
+cmd = "npm start"

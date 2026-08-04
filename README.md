@@ -52,6 +52,18 @@ cd client && npm install && npm run dev
 - Frontend: http://localhost:5173 (or 5174)
 - Backend: http://localhost:5001
 
+## Deploy on Railway
+
+1. Connect repo: `mohsin-ashraf123/Pair_Reviews_Bot`
+2. **Root Directory** leave as `/` (repo root — `package.json` is here)
+3. Railway will run: `npm run build` → `npm start`
+4. Add **Variables** in Railway (from `server/.env.example`):
+   - `MONGO_URI`, `MATRIX_*`, `DEVELOPERS`, `QA_TEAM`, `CRON_*`, `MEMBER_MATRIX_MAP`
+   - Do **not** set `PORT` — Railway sets it automatically
+5. Open your Railway URL — dashboard + API run on the same domain
+
+> Matrix E2EE session is stored in `server/data/` locally. On Railway, set `MATRIX_USER` + `MATRIX_PASSWORD` so the bot can log in on each deploy (or attach a volume for `server/data`).
+
 ## How pairs work
 
 - **Developers** — 2-person pairs rotate daily  
