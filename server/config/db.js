@@ -4,17 +4,12 @@ const connectDB = async () => {
   const uri = process.env.MONGO_URI?.trim();
 
   if (!uri) {
-    console.error('MONGO_URI missing — add it in server/.env');
-    process.exit(1);
+    throw new Error('MONGO_URI missing — add it in Railway Variables or server/.env');
   }
 
-  try {
-    const conn = await mongoose.connect(uri);
-    console.log(`MongoDB connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error(`MongoDB connection error: ${error.message}`);
-    process.exit(1);
-  }
+  const conn = await mongoose.connect(uri);
+  console.log(`MongoDB connected: ${conn.connection.host}`);
+  return conn;
 };
 
 export default connectDB;

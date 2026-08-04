@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load env before any other module reads process.env
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load server/.env locally; on Railway use dashboard variables
+dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const parseList = (value, fallback = []) => {
   if (!value?.trim()) return fallback;
