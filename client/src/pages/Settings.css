@@ -1,0 +1,172 @@
+.settings-page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-header h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+.settings-header h3,
+.content-card h3 {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.refresh-btn {
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.875rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.refresh-btn:hover {
+  background: #f8fafc;
+}
+
+.status-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.pill {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pill.good {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.pill.bad {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.pill.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-note {
+  max-width: 60%;
+  text-align: right;
+  white-space: normal;
+}
+
+.schedule-messages {
+  display: grid;
+  gap: 1rem;
+}
+
+.schedule-intro {
+  margin: -0.5rem 0 0.5rem;
+}
+
+.schedule-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.schedule-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  background: #fafbfc;
+}
+
+.schedule-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.schedule-card h4 {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+}
+
+.schedule-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.schedule-time-badge {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.schedule-desc {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.schedule-note {
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.65rem;
+  background: #eff6ff;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #1d4ed8;
+  line-height: 1.4;
+}
+
+.schedule-example {
+  margin: 0;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .settings-header {
+    flex-direction: column;
+  }
+
+  .status-note {
+    max-width: 100%;
+  }
+}

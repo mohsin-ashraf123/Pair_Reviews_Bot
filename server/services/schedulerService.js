@@ -1,0 +1,98 @@
+import cron from 'node-cron';
+import { config } from '../config/appConfig.js';
+import { sendDailyPairs, sendReviewReminder, sendMissedReviewNotice } from './pairBotService.js';
+import { getNextDailySendTarget } from './pairService.js';
+import { emitCountdownTick } from './socketService.js';
+
+let pairsTask = null;
+let reminderTask = null;
+let missedReviewTask = null;
+let countdownInterval = null;
+
+const broadcastCountdown = () => {
+  try {
+    emitCountdownTick(getNextDailySendTarget());
+  } catch {
+    // ignore
+  }
+};
+
+export const startPairScheduler = () => {
+  if (!cron.validate(config.cronSchedule)) {
+    console.error(`Invalid CRON_SCHEDULE: ${config.cronSchedule}`);
+    return null;
+  }
+
+  if (!pairsTask) {
+    pairsTask = cron.schedule(
+      config.cronSchedule,
+      async () => {
+        try {
+          const result = await sendDailyPairs('cron');
+          if (result.skipped) {
+            console.log(`[cron] Pairs skipped: ${result.reason}`);
+          } else {
+            console.log(`[cron] Daily pairs sent for ${result.pairsData.dateKey}`);
+          }
+        } catch (error) {
+          console.error('[cron] Failed to send daily pairs:', error.message);
+        }
+      },
+      { timezone: config.timezone }
+    );
+    console.log(`Pair scheduler active: "${config.cronSchedule}" (${config.timezone})`);
+  }
+
+  if (cron.validate(config.reminderCronSchedule) && !reminderTask) {
+    reminderTask = cron.schedule(
+      config.reminderCronSchedule,
+      async () => {
+        try {
+          const result = await sendReviewReminder('cron');
+          if (result.skipped) {
+            console.log(`[cron] Reminder skipped: ${result.reason}`);
+          } else {
+            console.log(`[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`);
+          }
+        } catch (error) {
+          console.error('[cron] Failed to send review reminder:', error.message);
+        }
+      },
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (cron.validate(config.missedReviewCronSchedule) && !missedReviewTask) {
+    missedReviewTask = cron.schedule(
+      config.missedReviewCronSchedule,
+      async () => {
+        try {
+          const result = await sendMissedReviewNotice('cron');
+          if (result.skipped) {
+            console.log(`[cron] Missed review notice skipped: ${result.reason}`);
+          } else {
+            console.log(
+              `[cron] Missed review notice sent for ${result.forDate} (${result.pendingPairs.length} pairs)`
+            );
+          }
+        } catch (error) {
+          console.error('[cron] Failed to send missed review notice:', error.message);
+        }
+      },
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Missed review scheduler active: "${config.missedReviewCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (!countdownInterval) {
+    broadcastCountdown();
+    countdownInterval = setInterval(broadcastCountdown, 1000);
+  }
+
+  return pairsTask;
+};

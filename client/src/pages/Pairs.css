@@ -1,0 +1,155 @@
+.pairs-page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.pairs-count {
+  margin-top: 0.25rem;
+}
+
+.table-loading {
+  padding: 2rem;
+  text-align: center;
+}
+
+.col-num {
+  width: 40px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.pairs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pairs-header h2 {
+  margin: 0 0 0.25rem;
+}
+
+.month-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.875rem;
+  color: var(--text);
+  min-width: 160px;
+}
+
+.pairs-table-wrap {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.pairs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.pairs-table th,
+.pairs-table td {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.pairs-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pairs-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+.col-date {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.col-day {
+  white-space: nowrap;
+  color: var(--text-muted);
+  width: 60px;
+}
+
+.col-lead {
+  white-space: nowrap;
+  font-weight: 600;
+  width: 100px;
+}
+
+.col-pairs {
+  min-width: 280px;
+}
+
+.pairs-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.pair-chip {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.empty-row {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem !important;
+}
+
+.feedback.err {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+@media (max-width: 768px) {
+  .pairs-header {
+    flex-direction: column;
+  }
+
+  .month-select {
+    width: 100%;
+  }
+
+  .pairs-table th,
+  .pairs-table td {
+    padding: 0.65rem 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  .col-pairs {
+    min-width: 180px;
+  }
+
+  .pair-chip {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+  }
+}
