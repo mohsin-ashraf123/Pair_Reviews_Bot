@@ -21,6 +21,25 @@ import {
 import { savePairRecord, getLastPairRecord, getPairHistory, getPairRecordByDate } from './pairRecordService.js';
 import DailyReview from '../models/DailyReview.js';
 
+const notYetSent = (field) => ({
+  $or: [{ [field]: null }, { [field]: { $exists: false } }],
+});
+
+/** Atomically reserve a one-shot send slot so parallel cron ticks cannot double-send. */
+const claimReviewSendSlot = async (dateKey, field) =>
+  DailyReview.findOneAndUpdate(
+    {
+      dateKey,
+      ...notYetSent(field),
+    },
+    { $set: { [field]: new Date() } },
+    { new: false }
+  );
+
+const releaseReviewSendSlot = async (dateKey, field) => {
+  await DailyReview.updateOne({ dateKey }, { $unset: { [field]: '' } });
+};
+
 export const getTodayPreview = async () => {
   const target = getActivePreviewTarget();
   const pairsData = buildDailyPairsFromDateKey(target.previewDateKey);
@@ -123,28 +142,43 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'Daily pairs not sent yet' };
   }
 
-  if (review.reminderSentAt && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Reminder already sent today' };
-  }
-
   const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
   if (pendingPairs.length === 0) {
     return { skipped: true, reason: 'All reviews completed', pendingPairs: [] };
   }
 
+  if (triggeredBy === 'cron') {
+    const claimed = await claimReviewSendSlot(dateKey, 'reminderSentAt');
+    if (!claimed) {
+      return { skipped: true, reason: 'Reminder already sent today' };
+    }
+  } else if (review.reminderSentAt) {
+    return { skipped: true, reason: 'Reminder already sent today' };
+  }
+
   const message = formatReminderMessage(review.lead, pendingPairs);
-  const result = await sendMatrixMessage(message);
-  await logOutgoingMessage(message, result.event_id, 'bot_reminder');
 
-  review.reminderSentAt = new Date();
-  await review.save();
+  try {
+    const result = await sendMatrixMessage(message);
+    await logOutgoingMessage(message, result.event_id, 'bot_reminder');
 
-  return {
-    skipped: false,
-    message,
-    pendingPairs,
-    reviewedMembers: review.reviewedMembers,
-  };
+    if (triggeredBy !== 'cron') {
+      review.reminderSentAt = new Date();
+      await review.save();
+    }
+
+    return {
+      skipped: false,
+      message,
+      pendingPairs,
+      reviewedMembers: review.reviewedMembers,
+    };
+  } catch (error) {
+    if (triggeredBy === 'cron') {
+      await releaseReviewSendSlot(dateKey, 'reminderSentAt');
+    }
+    throw error;
+  }
 };
 
 /** Weekday 10:50 AM — notify about yesterday's pairs that missed review. */
@@ -171,17 +205,34 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'All yesterday reviews completed' };
   }
 
+  if (triggeredBy === 'cron') {
+    const claimed = await claimReviewSendSlot(yesterdayKey, 'missedReviewNoticeSentAt');
+    if (!claimed) {
+      return { skipped: true, reason: 'Missed review notice already sent' };
+    }
+  }
+
   const message = formatMissedReviewMessage(yesterdayKey, pendingPairs);
-  const result = await sendMatrixMessage(message);
-  await logOutgoingMessage(message, result.event_id, 'bot_missed');
 
-  review.missedReviewNoticeSentAt = new Date();
-  await review.save();
+  try {
+    const result = await sendMatrixMessage(message);
+    await logOutgoingMessage(message, result.event_id, 'bot_missed');
 
-  return {
-    skipped: false,
-    message,
-    pendingPairs,
-    forDate: yesterdayKey,
-  };
+    if (triggeredBy !== 'cron') {
+      review.missedReviewNoticeSentAt = new Date();
+      await review.save();
+    }
+
+    return {
+      skipped: false,
+      message,
+      pendingPairs,
+      forDate: yesterdayKey,
+    };
+  } catch (error) {
+    if (triggeredBy === 'cron') {
+      await releaseReviewSendSlot(yesterdayKey, 'missedReviewNoticeSentAt');
+    }
+    throw error;
+  }
 };

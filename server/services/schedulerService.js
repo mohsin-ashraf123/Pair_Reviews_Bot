@@ -9,6 +9,26 @@ let reminderTask = null;
 let missedReviewTask = null;
 let countdownInterval = null;
 
+const cronInFlight = {
+  pairs: false,
+  reminder: false,
+  missed: false,
+};
+
+const runCronJob = async (key, fn) => {
+  if (cronInFlight[key]) {
+    console.log(`[cron] ${key} job already running — skipping duplicate tick`);
+    return;
+  }
+
+  cronInFlight[key] = true;
+  try {
+    await fn();
+  } finally {
+    cronInFlight[key] = false;
+  }
+};
+
 const broadcastCountdown = () => {
   try {
     emitCountdownTick(getNextDailySendTarget());
@@ -26,18 +46,19 @@ export const startPairScheduler = () => {
   if (!pairsTask) {
     pairsTask = cron.schedule(
       config.cronSchedule,
-      async () => {
-        try {
-          const result = await sendDailyPairs('cron');
-          if (result.skipped) {
-            console.log(`[cron] Pairs skipped: ${result.reason}`);
-          } else {
-            console.log(`[cron] Daily pairs sent for ${result.pairsData.dateKey}`);
+      () =>
+        runCronJob('pairs', async () => {
+          try {
+            const result = await sendDailyPairs('cron');
+            if (result.skipped) {
+              console.log(`[cron] Pairs skipped: ${result.reason}`);
+            } else {
+              console.log(`[cron] Daily pairs sent for ${result.pairsData.dateKey}`);
+            }
+          } catch (error) {
+            console.error('[cron] Failed to send daily pairs:', error.message);
           }
-        } catch (error) {
-          console.error('[cron] Failed to send daily pairs:', error.message);
-        }
-      },
+        }),
       { timezone: config.timezone }
     );
     console.log(`Pair scheduler active: "${config.cronSchedule}" (${config.timezone})`);
@@ -46,18 +67,19 @@ export const startPairScheduler = () => {
   if (cron.validate(config.reminderCronSchedule) && !reminderTask) {
     reminderTask = cron.schedule(
       config.reminderCronSchedule,
-      async () => {
-        try {
-          const result = await sendReviewReminder('cron');
-          if (result.skipped) {
-            console.log(`[cron] Reminder skipped: ${result.reason}`);
-          } else {
-            console.log(`[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`);
+      () =>
+        runCronJob('reminder', async () => {
+          try {
+            const result = await sendReviewReminder('cron');
+            if (result.skipped) {
+              console.log(`[cron] Reminder skipped: ${result.reason}`);
+            } else {
+              console.log(`[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`);
+            }
+          } catch (error) {
+            console.error('[cron] Failed to send review reminder:', error.message);
           }
-        } catch (error) {
-          console.error('[cron] Failed to send review reminder:', error.message);
-        }
-      },
+        }),
       { timezone: config.timezone }
     );
     console.log(
@@ -68,20 +90,21 @@ export const startPairScheduler = () => {
   if (cron.validate(config.missedReviewCronSchedule) && !missedReviewTask) {
     missedReviewTask = cron.schedule(
       config.missedReviewCronSchedule,
-      async () => {
-        try {
-          const result = await sendMissedReviewNotice('cron');
-          if (result.skipped) {
-            console.log(`[cron] Missed review notice skipped: ${result.reason}`);
-          } else {
-            console.log(
-              `[cron] Missed review notice sent for ${result.forDate} (${result.pendingPairs.length} pairs)`
-            );
+      () =>
+        runCronJob('missed', async () => {
+          try {
+            const result = await sendMissedReviewNotice('cron');
+            if (result.skipped) {
+              console.log(`[cron] Missed review notice skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Missed review notice sent for ${result.forDate} (${result.pendingPairs.length} pairs)`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Failed to send missed review notice:', error.message);
           }
-        } catch (error) {
-          console.error('[cron] Failed to send missed review notice:', error.message);
-        }
-      },
+        }),
       { timezone: config.timezone }
     );
     console.log(
