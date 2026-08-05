@@ -19,26 +19,8 @@ import {
   buildReviewState,
 } from './reviewService.js';
 import { savePairRecord, getLastPairRecord, getPairHistory, getPairRecordByDate } from './pairRecordService.js';
+import { claimCronJob, completeCronJob, releaseCronJob } from './cronJobService.js';
 import DailyReview from '../models/DailyReview.js';
-
-const notYetSent = (field) => ({
-  $or: [{ [field]: null }, { [field]: { $exists: false } }],
-});
-
-/** Atomically reserve a one-shot send slot so parallel cron ticks cannot double-send. */
-const claimReviewSendSlot = async (dateKey, field) =>
-  DailyReview.findOneAndUpdate(
-    {
-      dateKey,
-      ...notYetSent(field),
-    },
-    { $set: { [field]: new Date() } },
-    { new: false }
-  );
-
-const releaseReviewSendSlot = async (dateKey, field) => {
-  await DailyReview.updateOne({ dateKey }, { $unset: { [field]: '' } });
-};
 
 export const getTodayPreview = async () => {
   const target = getActivePreviewTarget();
@@ -77,33 +59,52 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
 
   const pairsData = buildDailyPairs();
   const message = formatDailyMessage(pairsData);
+  const jobKey = `daily_pairs:${dateKey}`;
 
-  const existingToday = await getPairRecordByDate(dateKey);
-  if (existingToday && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Already sent today', pairsData, message };
+  if (triggeredBy === 'cron') {
+    const claimed = await claimCronJob(jobKey, { jobType: 'daily_pairs', dateKey });
+    if (!claimed) {
+      return { skipped: true, reason: 'Already sent today', pairsData, message };
+    }
+  } else {
+    const existingToday = await getPairRecordByDate(dateKey);
+    if (existingToday) {
+      return { skipped: true, reason: 'Already sent today', pairsData, message };
+    }
   }
 
-  const result = await sendMatrixMessage(message);
-  await logOutgoingMessage(message, result.event_id, 'bot_pairs');
+  try {
+    const result = await sendMatrixMessage(message);
+    await logOutgoingMessage(message, result.event_id, 'bot_pairs');
 
-  const review = await ensureDailyReview({
-    dateKey,
-    lead: pairsData.lead,
-    pairs: pairsData.allPairs,
-    pairsSentAt: new Date(),
-  });
-  const { emitReviewUpdate } = await import('./socketService.js');
-  emitReviewUpdate(buildReviewState(review));
+    const review = await ensureDailyReview({
+      dateKey,
+      lead: pairsData.lead,
+      pairs: pairsData.allPairs,
+      pairsSentAt: new Date(),
+    });
+    const { emitReviewUpdate } = await import('./socketService.js');
+    emitReviewUpdate(buildReviewState(review));
 
-  const log = await savePairRecord({
-    dateKey,
-    pairsData,
-    message,
-    matrixEventId: result.event_id,
-    triggeredBy,
-  });
+    const log = await savePairRecord({
+      dateKey,
+      pairsData,
+      message,
+      matrixEventId: result.event_id,
+      triggeredBy,
+    });
 
-  return { skipped: false, pairsData, message, log };
+    if (triggeredBy === 'cron') {
+      await completeCronJob(jobKey, result.event_id);
+    }
+
+    return { skipped: false, pairsData, message, log };
+  } catch (error) {
+    if (triggeredBy === 'cron') {
+      await releaseCronJob(jobKey);
+    }
+    throw error;
+  }
 };
 
 export const getMessageHistory = (limit = 14) => getPairHistory(limit);
@@ -147,8 +148,10 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'All reviews completed', pendingPairs: [] };
   }
 
+  const jobKey = `review_reminder:${dateKey}`;
+
   if (triggeredBy === 'cron') {
-    const claimed = await claimReviewSendSlot(dateKey, 'reminderSentAt');
+    const claimed = await claimCronJob(jobKey, { jobType: 'review_reminder', dateKey });
     if (!claimed) {
       return { skipped: true, reason: 'Reminder already sent today' };
     }
@@ -162,9 +165,11 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
     const result = await sendMatrixMessage(message);
     await logOutgoingMessage(message, result.event_id, 'bot_reminder');
 
-    if (triggeredBy !== 'cron') {
-      review.reminderSentAt = new Date();
-      await review.save();
+    review.reminderSentAt = new Date();
+    await review.save();
+
+    if (triggeredBy === 'cron') {
+      await completeCronJob(jobKey, result.event_id);
     }
 
     return {
@@ -175,7 +180,7 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
     };
   } catch (error) {
     if (triggeredBy === 'cron') {
-      await releaseReviewSendSlot(dateKey, 'reminderSentAt');
+      await releaseCronJob(jobKey);
     }
     throw error;
   }
@@ -196,20 +201,20 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'No pairs sent yesterday' };
   }
 
-  if (review.missedReviewNoticeSentAt && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Missed review notice already sent' };
-  }
-
   const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
   if (pendingPairs.length === 0) {
     return { skipped: true, reason: 'All yesterday reviews completed' };
   }
 
+  const jobKey = `missed_review:${todayKey}:for:${yesterdayKey}`;
+
   if (triggeredBy === 'cron') {
-    const claimed = await claimReviewSendSlot(yesterdayKey, 'missedReviewNoticeSentAt');
+    const claimed = await claimCronJob(jobKey, { jobType: 'missed_review', dateKey: todayKey });
     if (!claimed) {
       return { skipped: true, reason: 'Missed review notice already sent' };
     }
+  } else if (review.missedReviewNoticeSentAt) {
+    return { skipped: true, reason: 'Missed review notice already sent' };
   }
 
   const message = formatMissedReviewMessage(yesterdayKey, pendingPairs);
@@ -218,9 +223,11 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     const result = await sendMatrixMessage(message);
     await logOutgoingMessage(message, result.event_id, 'bot_missed');
 
-    if (triggeredBy !== 'cron') {
-      review.missedReviewNoticeSentAt = new Date();
-      await review.save();
+    review.missedReviewNoticeSentAt = new Date();
+    await review.save();
+
+    if (triggeredBy === 'cron') {
+      await completeCronJob(jobKey, result.event_id);
     }
 
     return {
@@ -231,7 +238,7 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     };
   } catch (error) {
     if (triggeredBy === 'cron') {
-      await releaseReviewSendSlot(yesterdayKey, 'missedReviewNoticeSentAt');
+      await releaseCronJob(jobKey);
     }
     throw error;
   }

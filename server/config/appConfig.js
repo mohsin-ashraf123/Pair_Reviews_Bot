@@ -32,6 +32,7 @@ export const config = {
   ]),
   qaTeam: parseList(process.env.QA_TEAM, ['Habiba', 'Aqeel', 'Adil']),
   timezone: process.env.CRON_TIMEZONE || 'Asia/Karachi',
+  enableCronScheduler: process.env.ENABLE_CRON_SCHEDULER !== 'false',
   cronSchedule: process.env.CRON_SCHEDULE || '0 11 * * 1-5',
   reminderCronSchedule: process.env.REMINDER_CRON_SCHEDULE || '50 18 * * 1-5',
   missedReviewCronSchedule: process.env.MISSED_REVIEW_CRON_SCHEDULE || '50 10 * * 1-5',

@@ -38,6 +38,11 @@ const broadcastCountdown = () => {
 };
 
 export const startPairScheduler = () => {
+  if (!config.enableCronScheduler) {
+    console.log('[cron] Scheduler disabled — set ENABLE_CRON_SCHEDULER=true to run crons on this instance');
+    return null;
+  }
+
   if (!cron.validate(config.cronSchedule)) {
     console.error(`Invalid CRON_SCHEDULE: ${config.cronSchedule}`);
     return null;
