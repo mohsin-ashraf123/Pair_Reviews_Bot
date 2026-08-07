@@ -123,26 +123,55 @@ const matrixFetch = async (homeserver, accessToken, method, apiPath, body) => {
   return data;
 };
 
+/** Only a real auth rejection means the token is dead — network errors don't. */
+const isAuthRejection = (err) =>
+  err?.status === 401 ||
+  err?.status === 403 ||
+  err?.errcode === 'M_UNKNOWN_TOKEN' ||
+  err?.errcode === 'M_MISSING_TOKEN';
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const resolveAccessCredentials = async () => {
   const homeserver = config.matrix.homeserver;
   const password = config.matrix.password;
   const username = config.matrix.user;
   let session = readSession();
 
-  // Prefer existing bot session if still valid
+  /**
+   * Reuse the saved bot device whenever possible. Creating a new device costs
+   * a slot against the account's device limit and gives members "Unable to
+   * decrypt" for anything the previous device sent, so a flaky network must
+   * never be treated as an expired token.
+   */
   if (session?.accessToken && session?.homeserver) {
-    try {
-      const whoami = await matrixFetch(
-        session.homeserver,
-        session.accessToken,
-        'GET',
-        '/_matrix/client/v3/account/whoami'
-      );
-      console.log(`Reusing session: ${whoami.user_id} / ${whoami.device_id}`);
-      return session;
-    } catch (err) {
-      console.warn(`Saved session invalid (${err.message}), creating new one...`);
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const whoami = await matrixFetch(
+          session.homeserver,
+          session.accessToken,
+          'GET',
+          '/_matrix/client/v3/account/whoami'
+        );
+        console.log(`Reusing session: ${whoami.user_id} / ${whoami.device_id}`);
+        return session;
+      } catch (err) {
+        lastError = err;
+        if (isAuthRejection(err)) break;
+        if (attempt < 3) await wait(attempt * 2000);
+      }
+    }
+
+    if (isAuthRejection(lastError)) {
+      console.warn(`Saved session rejected (${lastError.message}), creating new one...`);
       session = null;
+    } else {
+      console.warn(
+        `Could not verify saved session (${lastError?.message}) — keeping existing device to protect E2EE history.`
+      );
+      return session;
     }
   }
 
