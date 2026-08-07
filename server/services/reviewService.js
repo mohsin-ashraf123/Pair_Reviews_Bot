@@ -144,9 +144,22 @@ export const formatReminderMessage = (lead, pendingPairs) => {
   ].join('\n');
 };
 
-export const formatMissedReviewMessage = (dateKey, pendingPairs) => {
+/**
+ * `responseByPair` maps a sorted pair key to the follow-up answer collected
+ * from the members' personal rooms, e.g. "Farhan absent".
+ */
+export const formatMissedReviewMessage = (
+  dateKey,
+  pendingPairs,
+  responseByPair = new Map()
+) => {
   const displayDate = formatDisplayDate(dateKey);
-  const lines = pendingPairs.map((pair) => pair.join(' + '));
+  const lines = pendingPairs.map((pair) => {
+    const label = pair.join(' + ');
+    const reason = responseByPair.get(buildPairKey(pair)) || 'no response yet';
+    return `${label} (${reason})`;
+  });
+
   return [
     `Yesterday (${displayDate}) the following pairs did not submit their review:`,
     '',

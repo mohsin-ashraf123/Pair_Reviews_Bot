@@ -6,8 +6,12 @@ import {
   getMessageHistory,
   getMonthlyPairs,
   getDefaultMonthlyPairs,
+  sendMissingReviewFollowUps,
+  sendMissedReviewNotice,
 } from '../services/pairBotService.js';
-import { getNextDailySendTarget } from '../services/pairService.js';
+import { getMemberRoomsOverview } from '../services/memberRoomViewService.js';
+import { joinMemberRooms } from '../services/memberRoomService.js';
+import { getNextDailySendTarget, cronTimeLabel } from '../services/pairService.js';
 import { getTodayReviewState } from '../services/reviewService.js';
 import { getLiveRoomMessages, getArchivedReviewMessages } from '../services/roomMessageService.js';
 import RoomMessage from '../models/RoomMessage.js';
@@ -125,6 +129,42 @@ router.get('/performance', async (req, res) => {
   }
 });
 
+router.get('/member-rooms', async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 12, 50);
+    res.json(await getMemberRoomsOverview(limit));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/member-rooms/join', async (req, res) => {
+  try {
+    await joinMemberRooms();
+    res.json(await getMemberRoomsOverview());
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/member-rooms/send-prompts', async (req, res) => {
+  try {
+    const onlyMember = req.body?.member || null;
+    const result = await sendMissingReviewFollowUps('manual', { onlyMember });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/missed-review/send', async (req, res) => {
+  try {
+    res.json(await sendMissedReviewNotice('manual'));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 router.get('/schedules', async (req, res) => {
   try {
     res.json(await getScheduledMessagesInfo());
@@ -157,11 +197,13 @@ router.get('/status', async (req, res) => {
       schedule: {
         timezone: config.timezone,
         cron: config.cronSchedule,
-        description: 'Weekdays at 11:00 AM',
+        description: `Weekdays at ${cronTimeLabel(config.cronSchedule, 11, 30)}`,
         reminderCron: config.reminderCronSchedule,
-        reminderDescription: 'Weekdays at 6:50 PM',
+        reminderDescription: `Weekdays at ${cronTimeLabel(config.reminderCronSchedule, 18, 50)}`,
         missedReviewCron: config.missedReviewCronSchedule,
-        missedReviewDescription: 'Weekdays at 10:50 AM',
+        missedReviewDescription: `Weekdays at ${cronTimeLabel(config.missedReviewCronSchedule, 11, 20)}`,
+        missingReviewPromptCron: config.missingReviewPromptCronSchedule,
+        missingReviewPromptDescription: `Weekdays at ${cronTimeLabel(config.missingReviewPromptCronSchedule, 10, 50)}`,
       },
       team: {
         developers: config.developers,

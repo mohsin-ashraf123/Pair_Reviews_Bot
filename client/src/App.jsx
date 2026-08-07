@@ -6,6 +6,7 @@ import Overview from './pages/Overview';
 import Pairs from './pages/Pairs';
 import History from './pages/History';
 import Performance from './pages/Performance';
+import MemberRooms from './pages/MemberRooms';
 import Settings from './pages/Settings';
 
 function ProtectedRoute({ children }) {
@@ -41,6 +42,7 @@ function App() {
         <Route path="pairs" element={<Pairs />} />
         <Route path="history" element={<History />} />
         <Route path="performance" element={<Performance />} />
+        <Route path="members" element={<MemberRooms />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

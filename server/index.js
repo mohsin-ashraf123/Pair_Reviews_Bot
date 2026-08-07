@@ -10,6 +10,7 @@ import pairRoutes from './routes/pairs.js';
 import { startPairScheduler } from './services/schedulerService.js';
 import { warmMatrixClient } from './services/matrixService.js';
 import { initSocketServer } from './services/socketService.js';
+import { seedMemberRooms, joinMemberRooms } from './services/memberRoomService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '../client/dist');
@@ -57,8 +58,13 @@ const start = async () => {
 
   try {
     await connectDB();
+    await seedMemberRooms();
     startPairScheduler();
-    warmMatrixClient();
+    warmMatrixClient().then(() => {
+      joinMemberRooms().catch((error) =>
+        console.error('Member room join failed:', error.message)
+      );
+    });
   } catch (error) {
     console.error('Startup warning:', error.message);
     console.error('Server is up but DB/Matrix may be unavailable — check Railway Variables.');

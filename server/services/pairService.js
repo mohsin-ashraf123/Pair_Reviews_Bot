@@ -1,7 +1,42 @@
 import { config } from '../config/appConfig.js';
 
-const SEND_HOUR = 11;
-const SEND_MINUTE = 0;
+/** Daily send time comes from CRON_SCHEDULE so previews stay in sync with cron. */
+const parseCronTime = (expression, fallbackHour, fallbackMinute) => {
+  const [minute, hour] = (expression || '').trim().split(/\s+/);
+  const h = Number(hour);
+  const m = Number(minute);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return { hour: fallbackHour, minute: fallbackMinute };
+  }
+  return { hour: h, minute: m };
+};
+
+const { hour: SEND_HOUR, minute: SEND_MINUTE } = parseCronTime(config.cronSchedule, 11, 30);
+
+/** "11:30 AM" style label for a cron expression. */
+export const cronTimeLabel = (expression, fallbackHour = 11, fallbackMinute = 0) => {
+  const { hour, minute } = parseCronTime(expression, fallbackHour, fallbackMinute);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+};
+
+export const dailySendTimeLabel = () => cronTimeLabel(config.cronSchedule, 11, 30);
+
+/** True once today's local clock has passed the time in a cron expression. */
+export const isPastCronTimeToday = (
+  expression,
+  fallbackHour,
+  fallbackMinute,
+  date = new Date()
+) => {
+  const target = parseCronTime(expression, fallbackHour, fallbackMinute);
+  const now = getKarachiTimeParts(date);
+  return (
+    now.hour > target.hour ||
+    (now.hour === target.hour && now.minute >= target.minute)
+  );
+};
 
 export const getKarachiDateKey = (date = new Date()) => {
   return new Intl.DateTimeFormat('en-CA', {
@@ -60,6 +95,20 @@ export const getPreviousWorkingDay = (dateKey) => {
     current = addCalendarDays(current, -1);
   } while (isWeekend(current));
   return current;
+};
+
+/**
+ * The day the next missing-review follow-up run will chase. Before today's
+ * run it is still the previous working day; once that run has passed, the
+ * next one covers today.
+ */
+export const getFollowUpTargetDateKey = (date = new Date()) => {
+  const todayKey = getKarachiDateKey(date);
+  const runDone =
+    !isWeekend(todayKey) &&
+    isPastCronTimeToday(config.missingReviewPromptCronSchedule, 10, 50, date);
+
+  return runDone ? todayKey : getPreviousWorkingDay(todayKey);
 };
 
 export const formatDisplayDate = (dateKey) => {
@@ -170,20 +219,21 @@ export const buildDailyPairs = (date = new Date()) =>
 
 /**
  * Preview for the next message that will go out:
- * - Weekday before 11 AM → today's pairs
- * - Weekday after 11 AM → next working day's pairs
+ * - Weekday before send time → today's pairs
+ * - Weekday after send time → next working day's pairs
  * - Weekend → Monday's pairs
  */
 export const getActivePreviewTarget = (date = new Date()) => {
   const todayKey = getKarachiDateKey(date);
   const afterSend = isPastDailySendTime(date);
+  const timeLabel = dailySendTimeLabel();
 
   if (isWeekend(todayKey)) {
     const mondayKey = nextWorkingDay(todayKey);
     return {
       previewDateKey: mondayKey,
       previewFor: 'monday',
-      label: `Next message (going out Monday ${mondayKey} at 11:00 AM)`,
+      label: `Next message (going out Monday ${mondayKey} at ${timeLabel})`,
     };
   }
 
@@ -191,7 +241,7 @@ export const getActivePreviewTarget = (date = new Date()) => {
     return {
       previewDateKey: todayKey,
       previewFor: 'today',
-      label: 'Next message (going out today at 11:00 AM)',
+      label: `Next message (going out today at ${timeLabel})`,
     };
   }
 
@@ -201,8 +251,8 @@ export const getActivePreviewTarget = (date = new Date()) => {
     previewDateKey: nextKey,
     previewFor: isFriday ? 'monday' : 'tomorrow',
     label: isFriday
-      ? `Next message (going out Monday ${nextKey} at 11:00 AM)`
-      : 'Next message (going out tomorrow at 11:00 AM)',
+      ? `Next message (going out Monday ${nextKey} at ${timeLabel})`
+      : `Next message (going out tomorrow at ${timeLabel})`,
   };
 };
 
@@ -258,7 +308,7 @@ export const getCurrentMonthParts = (date = new Date()) => {
   };
 };
 
-/** Next weekday 11:00 AM (Asia/Karachi) send target. */
+/** Next weekday daily-pairs send target (Asia/Karachi). */
 export const getNextDailySendTarget = (date = new Date()) => {
   const todayKey = getKarachiDateKey(date);
   let candidateKey = todayKey;

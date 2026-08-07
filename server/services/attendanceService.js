@@ -32,6 +32,23 @@ const resolveDayAttendance = (member, dateKey, todayKey, review, scheduledPairs)
     return { status: 'present', pairLabel };
   }
 
+  // Confirmed through the member's follow-up reply — review happened, message didn't.
+  if (review.lateReviewedMembers?.includes(member)) {
+    return { status: 'forgot', pairLabel, note: 'They forgot to send the review' };
+  }
+
+  if (review.absentMembers?.includes(member)) {
+    return { status: 'absent', pairLabel, confirmed: true, note: 'Confirmed absent in follow-up' };
+  }
+
+  if (review.halfDayMembers?.includes(member)) {
+    return { status: 'half_day', pairLabel, note: 'Half day leave' };
+  }
+
+  if (review.excusedMembers?.includes(member)) {
+    return { status: 'excused', pairLabel, note: 'Present — pair partner was absent' };
+  }
+
   if (dateKey > todayKey) {
     return { status: 'future', pairLabel };
   }
@@ -40,7 +57,7 @@ const resolveDayAttendance = (member, dateKey, todayKey, review, scheduledPairs)
     return { status: 'pending', pairLabel };
   }
 
-  return { status: 'absent', pairLabel };
+  return { status: 'absent', pairLabel, confirmed: false };
 };
 
 export const getMonthlyPerformance = async (year, month) => {
@@ -74,7 +91,16 @@ export const getMonthlyPerformance = async (year, month) => {
 
   const memberRows = members.map((member) => {
     const cells = {};
-    const summary = { present: 0, absent: 0, pending: 0, future: 0, noData: 0 };
+    const summary = {
+      present: 0,
+      forgot: 0,
+      absent: 0,
+      halfDay: 0,
+      excused: 0,
+      pending: 0,
+      future: 0,
+      noData: 0,
+    };
 
     for (const day of days) {
       const review = reviewMap[day.dateKey];
@@ -88,17 +114,21 @@ export const getMonthlyPerformance = async (year, month) => {
       cells[day.dateKey] = cell;
 
       if (cell.status === 'present') summary.present += 1;
+      else if (cell.status === 'forgot') summary.forgot += 1;
       else if (cell.status === 'absent') summary.absent += 1;
+      else if (cell.status === 'half_day') summary.halfDay += 1;
+      else if (cell.status === 'excused') summary.excused += 1;
       else if (cell.status === 'pending') summary.pending += 1;
       else if (cell.status === 'future') summary.future += 1;
       else if (cell.status === 'no_data') summary.noData += 1;
     }
 
-    summary.tracked = summary.present + summary.absent;
+    // "Forgot" still means the review happened, so it counts as attended.
+    // Half day and excused days stay out of the rate entirely.
+    const attended = summary.present + summary.forgot;
+    summary.tracked = attended + summary.absent;
     summary.rate =
-      summary.tracked > 0
-        ? Math.round((summary.present / summary.tracked) * 100)
-        : null;
+      summary.tracked > 0 ? Math.round((attended / summary.tracked) * 100) : null;
 
     return { member, cells, summary };
   });

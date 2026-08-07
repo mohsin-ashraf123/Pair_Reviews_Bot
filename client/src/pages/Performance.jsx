@@ -7,8 +7,12 @@ import './Performance.css';
 
 function cellLabel(cell) {
   if (!cell) return '—';
-  if (cell.status === 'present') return 'Present';
-  if (cell.status === 'absent') return `Absent · ${cell.pairLabel}`;
+  const note = cell.note ? ` · ${cell.note}` : '';
+  if (cell.status === 'present') return `Present${note}`;
+  if (cell.status === 'forgot') return `Forgot to send review · ${cell.pairLabel}${note}`;
+  if (cell.status === 'absent') return `Absent · ${cell.pairLabel}${note}`;
+  if (cell.status === 'half_day') return `Half day leave · ${cell.pairLabel}${note}`;
+  if (cell.status === 'excused') return `Excused · ${cell.pairLabel}${note}`;
   if (cell.status === 'pending') return 'Pending';
   if (cell.status === 'no_data') return 'N/A';
   return '—';
@@ -97,6 +101,9 @@ function Performance() {
       <div className="performance-legend">
         <span className="legend-item present">Present</span>
         <span className="legend-item absent">Absent</span>
+        <span className="legend-item forgot">Forgot to send review</span>
+        <span className="legend-item half-day">Half day leave</span>
+        <span className="legend-item excused">Excused (partner absent)</span>
         <span className="legend-item pending">Pending</span>
       </div>
 
@@ -136,6 +143,24 @@ function Performance() {
                           {cell?.status === 'absent' && (
                             <span className="absent-text">
                               Absent
+                              <small>{cell.pairLabel}</small>
+                            </span>
+                          )}
+                          {cell?.status === 'forgot' && (
+                            <span className="absent-text">
+                              Forgot
+                              <small>{cell.pairLabel}</small>
+                            </span>
+                          )}
+                          {cell?.status === 'half_day' && (
+                            <span className="absent-text">
+                              Half day
+                              <small>{cell.pairLabel}</small>
+                            </span>
+                          )}
+                          {cell?.status === 'excused' && (
+                            <span className="absent-text">
+                              Excused
                               <small>{cell.pairLabel}</small>
                             </span>
                           )}

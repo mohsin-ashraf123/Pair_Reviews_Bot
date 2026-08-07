@@ -36,3 +36,11 @@ export const emitReviewUpdate = (reviewState) => {
 export const emitCountdownTick = (countdown) => {
   io?.emit('countdown:update', countdown);
 };
+
+export const emitMemberRoomUpdate = (payload) => {
+  io?.emit('member-room:update', payload);
+};
+
+export const emitMemberRoomMessage = (message) => {
+  io?.emit('member-room:message', message);
+};

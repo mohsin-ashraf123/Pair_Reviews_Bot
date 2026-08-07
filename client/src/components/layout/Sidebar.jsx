@@ -6,6 +6,7 @@ const navItems = [
   { label: 'Pairs', short: 'Pairs', to: '/dashboard/pairs', icon: 'pairs' },
   { label: 'History', short: 'History', to: '/dashboard/history', icon: 'history' },
   { label: 'Performance', short: 'Stats', to: '/dashboard/performance', icon: 'stats' },
+  { label: 'Member Rooms', short: 'Rooms', to: '/dashboard/members', icon: 'rooms' },
   { label: 'Settings', short: 'Settings', to: '/dashboard/settings', icon: 'settings' },
 ];
 
@@ -53,6 +54,13 @@ function TabIcon({ name, active }) {
           <path d="M5 19V11" />
           <path d="M12 19V5" />
           <path d="M19 19v-7" />
+        </svg>
+      );
+    case 'rooms':
+      return (
+        <svg {...props}>
+          <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3.5V16h-.5A1.5 1.5 0 0 1 4 14.5Z" />
+          <path d="M8.5 10h7" />
         </svg>
       );
     case 'settings':

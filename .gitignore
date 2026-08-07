@@ -7,3 +7,7 @@ server/data/
 .DS_Store
 .vscode/
 .cursor/
+
+# Local DevOps documentation generators — not part of the bot
+generate_*.py
+*.docx

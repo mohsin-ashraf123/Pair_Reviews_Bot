@@ -430,6 +430,21 @@ export const sendMatrixMessage = async (body) => {
   return { event_id: eventId };
 };
 
+/** Send to any room the bot has joined (member follow-up rooms). */
+export const sendMatrixMessageToRoom = async (roomId, body) => {
+  if (!roomId) throw new Error('roomId is required');
+  const client = await getMatrixClient();
+  const eventId = await client.sendText(roomId, body);
+  return { event_id: eventId };
+};
+
+/** Join a room if not already joined — safe to call repeatedly. */
+export const joinMatrixRoom = async (roomId) => {
+  const client = await getMatrixClient();
+  await client.joinRoom(roomId);
+  return true;
+};
+
 export const getBotUserId = async () => {
   const client = await getMatrixClient();
   return client.getUserId();

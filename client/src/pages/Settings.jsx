@@ -116,6 +116,12 @@ function Settings() {
                 <p className="schedule-note">{item.exampleNote}</p>
               )}
               <pre className="schedule-example">{item.example}</pre>
+              {item.secondaryExample && (
+                <>
+                  <p className="schedule-note">{item.secondaryExampleTitle}</p>
+                  <pre className="schedule-example">{item.secondaryExample}</pre>
+                </>
+              )}
             </article>
           ))}
         </div>

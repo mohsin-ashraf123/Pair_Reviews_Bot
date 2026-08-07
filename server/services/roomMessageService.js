@@ -8,8 +8,17 @@ import {
   formatDuplicatePairAlert,
   handleReviewMessageDeleted,
 } from './reviewService.js';
-import { sendMatrixMessage } from './matrixService.js';
-import { emitRoomMessage, emitRoomMessageDeleted } from './socketService.js';
+import { sendMatrixMessage, sendMatrixMessageToRoom } from './matrixService.js';
+import {
+  emitRoomMessage,
+  emitRoomMessageDeleted,
+  emitMemberRoomMessage,
+} from './socketService.js';
+import {
+  getMemberForRoomId,
+  isMemberRoom,
+  touchMemberRoom,
+} from './memberRoomService.js';
 
 const LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const seenEvents = new Set();
@@ -17,6 +26,7 @@ const seenEvents = new Set();
 const classifyBotMessage = (body) => {
   if (body.startsWith('Pairs Today')) return 'bot_pairs';
   if (body.startsWith('🔔 Review Reminder')) return 'bot_reminder';
+  if (body.startsWith('🔔 Missing Review')) return 'bot_dm_prompt';
   if (body.startsWith('Missing review for')) return 'bot_missed';
   if (body.startsWith('Yesterday (')) return 'bot_missed';
   if (body.startsWith('⚠️ Wrong Pair Review')) return 'bot_wrong_pair';
@@ -152,8 +162,113 @@ export const persistAndBroadcastMessage = async (payload) => {
   }
 };
 
+/** Store a bot/member message that belongs to a personal follow-up room. */
+export const logMemberRoomMessage = async ({
+  member,
+  roomId,
+  body,
+  eventId,
+  category,
+  dateKey,
+  direction = 'out',
+  senderId,
+  senderName,
+}) => {
+  const payload = {
+    eventId: eventId || `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    dateKey: dateKey || getKarachiDateKey(),
+    roomId,
+    memberName: member,
+    senderId: senderId || config.matrix.user || '@bot:local',
+    senderName: senderName || (direction === 'out' ? 'Chat Bot' : member),
+    body,
+    direction,
+    category,
+    messageType: 'm.text',
+    sentAt: new Date(),
+  };
+
+  try {
+    const saved = await RoomMessage.findOneAndUpdate(
+      { eventId: payload.eventId },
+      payload,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    emitMemberRoomMessage({ ...toLivePayload(saved), memberName: member, roomId });
+    return saved;
+  } catch (error) {
+    if (error.code !== 11000) {
+      console.error('Failed to persist member room message:', error.message);
+    }
+    return null;
+  }
+};
+
+/** Route a reply inside a member's personal room to the prompt handler. */
+const handleMemberRoomEvent = async (roomId, event, botUserId) => {
+  const member = getMemberForRoomId(roomId);
+  if (!member) return;
+
+  const content = event.content || {};
+  const body = (content.body || '').trim();
+  const eventId = event.event_id;
+  if (!body || !eventId || seenEvents.has(eventId)) return;
+  seenEvents.add(eventId);
+
+  const senderId = event.sender || '';
+  const isBot = botUserId && senderId === botUserId;
+
+  if (isBot) {
+    await logMemberRoomMessage({
+      member,
+      roomId,
+      body,
+      eventId,
+      category: classifyBotMessage(body),
+    });
+    return;
+  }
+
+  await logMemberRoomMessage({
+    member,
+    roomId,
+    body,
+    eventId,
+    category: 'member_dm_reply',
+    direction: 'in',
+    senderId,
+    senderName: member,
+  });
+  await touchMemberRoom(member, { lastReplyAt: new Date() });
+
+  const { handleMemberReply } = await import('./missingReviewPromptService.js');
+  const result = await handleMemberReply(member, roomId, body, eventId);
+
+  if (!result?.ack) return;
+
+  try {
+    const sent = await sendMatrixMessageToRoom(roomId, result.ack);
+    await logMemberRoomMessage({
+      member,
+      roomId,
+      body: result.ack,
+      eventId: sent.event_id,
+      category: 'bot_dm_ack',
+      dateKey: result.prompt?.dateKey,
+    });
+  } catch (error) {
+    console.error(`[member-room] Ack failed for ${member}: ${error.message}`);
+  }
+};
+
 export const handleIncomingMatrixMessage = async (roomId, event, botUserId) => {
-  if (roomId !== config.matrix.roomId) return;
+  if (roomId !== config.matrix.roomId) {
+    if (isMemberRoom(roomId)) {
+      event.room_id = roomId;
+      await handleMemberRoomEvent(roomId, event, botUserId);
+    }
+    return;
+  }
 
   event.room_id = roomId;
   const payload = normalizeEvent(event, 'in', botUserId);
@@ -249,8 +364,23 @@ export const handleMessageRedaction = async (roomId, event) => {
   }
 };
 
+/** Recent messages for one member's personal room. */
+export const getMemberRoomMessages = (roomId, limit = 20) =>
+  RoomMessage.find({ roomId }).sort({ sentAt: -1 }).limit(limit);
+
 export const registerMatrixRoomListener = async (client) => {
   const botUserId = await client.getUserId();
+
+  client.on('room.invite', async (roomId) => {
+    try {
+      if (roomId === config.matrix.roomId || isMemberRoom(roomId)) {
+        await client.joinRoom(roomId);
+        console.log(`[matrix] Joined invited room ${roomId}`);
+      }
+    } catch (error) {
+      console.warn(`[matrix] Auto-join failed for ${roomId}: ${error.message}`);
+    }
+  });
 
   client.on('room.message', async (roomId, event) => {
     try {

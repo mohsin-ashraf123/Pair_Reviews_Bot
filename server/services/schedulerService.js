@@ -1,18 +1,25 @@
 import cron from 'node-cron';
 import { config } from '../config/appConfig.js';
-import { sendDailyPairs, sendReviewReminder, sendMissedReviewNotice } from './pairBotService.js';
+import {
+  sendDailyPairs,
+  sendReviewReminder,
+  sendMissedReviewNotice,
+  sendMissingReviewFollowUps,
+} from './pairBotService.js';
 import { getNextDailySendTarget } from './pairService.js';
 import { emitCountdownTick } from './socketService.js';
 
 let pairsTask = null;
 let reminderTask = null;
 let missedReviewTask = null;
+let promptTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
   pairs: false,
   reminder: false,
   missed: false,
+  prompts: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -89,6 +96,31 @@ export const startPairScheduler = () => {
     );
     console.log(
       `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (cron.validate(config.missingReviewPromptCronSchedule) && !promptTask) {
+    promptTask = cron.schedule(
+      config.missingReviewPromptCronSchedule,
+      () =>
+        runCronJob('prompts', async () => {
+          try {
+            const result = await sendMissingReviewFollowUps('cron');
+            if (result.skipped) {
+              console.log(`[cron] Missing review follow-ups skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Missing review follow-ups sent for ${result.forDate} (${result.prompts.length} members)`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Failed to send missing review follow-ups:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Missing review follow-up scheduler active: "${config.missingReviewPromptCronSchedule}" (${config.timezone})`
     );
   }
 

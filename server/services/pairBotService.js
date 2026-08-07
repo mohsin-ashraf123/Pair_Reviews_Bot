@@ -7,6 +7,7 @@ import {
   getKarachiDateKey,
   getMonthSchedule,
   getPreviousWorkingDay,
+  getFollowUpTargetDateKey,
   isWeekend,
 } from './pairService.js';
 import { sendMatrixMessage } from './matrixService.js';
@@ -20,6 +21,11 @@ import {
 } from './reviewService.js';
 import { savePairRecord, getLastPairRecord, getPairHistory, getPairRecordByDate } from './pairRecordService.js';
 import { claimCronJob, completeCronJob, releaseCronJob } from './cronJobService.js';
+import {
+  sendMissingReviewPrompts,
+  getPromptSummary,
+  summarizePairResponses,
+} from './missingReviewPromptService.js';
 import DailyReview from '../models/DailyReview.js';
 
 export const getTodayPreview = async () => {
@@ -186,7 +192,57 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
   }
 };
 
-/** Weekday 10:50 AM — notify about yesterday's pairs that missed review. */
+/**
+ * Weekday 10:50 AM — DM each member of yesterday's pairs that missed review,
+ * asking why. Their reply drives attendance and the 11:20 AM room notice.
+ */
+export const sendMissingReviewFollowUps = async (
+  triggeredBy = 'cron',
+  { onlyMember = null } = {}
+) => {
+  const todayKey = getKarachiDateKey();
+
+  if (isWeekend(todayKey)) {
+    return { skipped: true, reason: 'Weekend — no follow-ups' };
+  }
+
+  // Cron always chases the previous working day; a manual run from the
+  // dashboard chases whatever the dashboard is currently showing.
+  const yesterdayKey =
+    triggeredBy === 'cron' ? getPreviousWorkingDay(todayKey) : getFollowUpTargetDateKey();
+  const jobKey = `missing_review_prompts:${todayKey}:for:${yesterdayKey}`;
+
+  if (triggeredBy === 'cron') {
+    const claimed = await claimCronJob(jobKey, {
+      jobType: 'missing_review_prompts',
+      dateKey: todayKey,
+    });
+    if (!claimed) {
+      return { skipped: true, reason: 'Follow-ups already sent today' };
+    }
+  }
+
+  try {
+    const result = await sendMissingReviewPrompts(yesterdayKey, { onlyMember });
+
+    if (triggeredBy === 'cron') {
+      if (result.skipped) {
+        await releaseCronJob(jobKey);
+      } else {
+        await completeCronJob(jobKey, null);
+      }
+    }
+
+    return { ...result, forDate: yesterdayKey };
+  } catch (error) {
+    if (triggeredBy === 'cron') {
+      await releaseCronJob(jobKey);
+    }
+    throw error;
+  }
+};
+
+/** Weekday 11:20 AM — notify the main room about yesterday's missed reviews. */
 export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const todayKey = getKarachiDateKey();
 
@@ -217,7 +273,14 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'Missed review notice already sent' };
   }
 
-  const message = formatMissedReviewMessage(yesterdayKey, pendingPairs);
+  const { byPair } = await getPromptSummary(yesterdayKey);
+  const responseByPair = new Map();
+  for (const [key, entry] of byPair) {
+    const summary = summarizePairResponses(entry);
+    if (summary) responseByPair.set(key, summary);
+  }
+
+  const message = formatMissedReviewMessage(yesterdayKey, pendingPairs, responseByPair);
 
   try {
     const result = await sendMatrixMessage(message);

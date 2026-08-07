@@ -59,6 +59,21 @@
   color: #c41e12;
 }
 
+.legend-item.excused {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.legend-item.forgot {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.legend-item.half-day {
+  background: var(--warning-soft);
+  color: #a35b00;
+}
+
 .legend-item.pending {
   background: var(--warning-soft);
   color: #c93400;
@@ -145,6 +160,27 @@
 .day-cell.cell-absent {
   background: var(--danger-soft);
   color: #c41e12;
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.day-cell.cell-excused {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.day-cell.cell-forgot {
+  background: #ede9fe;
+  color: #6d28d9;
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.day-cell.cell-half-day {
+  background: var(--warning-soft);
+  color: #a35b00;
   font-size: 0.62rem;
   line-height: 1.2;
 }
