@@ -65,7 +65,6 @@ function Overview() {
     socket.on('schedules:update', (data) => {
       setSchedules((prev) => {
         if (!Array.isArray(data) || !data.length) return prev;
-        // Keep message previews from the initial dashboard load; only refresh timers.
         const previewById = Object.fromEntries(prev.map((item) => [item.id, item]));
         return data.map((job) => ({
           ...previewById[job.id],
@@ -114,7 +113,7 @@ function Overview() {
   if (loading) {
     return (
       <div className="overview-page">
-        <div className="overview-card overview-loading">
+        <div className="ov-card ov-loading">
           <p className="muted">Loading dashboard…</p>
         </div>
       </div>
@@ -125,183 +124,183 @@ function Overview() {
     nextJob?.remainingSeconds ?? countdown?.remainingSeconds ?? 0;
 
   return (
-    <div className={`overview-page${chatExpanded ? ' chat-expanded' : ''}`}>
-      <section className="countdown-bar">
-        <div>
-          <span className="countdown-label">Next automated message</span>
-          <p className="countdown-sub">
+    <div className="overview-page">
+      <section className="ov-hero">
+        <div className="ov-hero-copy">
+          <p className="ov-kicker">Next send</p>
+          <h1 className="ov-hero-title">
+            {nextJob?.title || 'Daily pairs message'}
+          </h1>
+          <p className="ov-hero-sub">
             {nextJob
-              ? `${nextJob.title} · ${nextJob.destination} · ${nextJob.nextLabel}`
+              ? `${nextJob.destination} · ${nextJob.nextLabel}`
               : countdown?.label || '—'}
           </p>
         </div>
-        <div className="countdown-timer">{formatCountdown(remainingSeconds)}</div>
+        <div className="ov-hero-timer" aria-label="Countdown">
+          {formatCountdown(remainingSeconds)}
+        </div>
       </section>
 
-      <section className="overview-card schedule-board">
-        <div className="overview-card-head">
-          <h2>Message schedule</h2>
-          <span className="overview-badge">Mon–Fri · Asia/Karachi</span>
+      <section className="ov-card">
+        <div className="ov-section-head">
+          <div>
+            <h2>Today’s schedule</h2>
+            <p className="ov-hint">Mon–Fri · Asia/Karachi · tap a row for message preview</p>
+          </div>
         </div>
-        <p className="overview-label">
-          Where each automated message goes, and how long until the next send
-        </p>
 
-        <div className="schedule-grid">
+        <div className="ov-schedule-list">
           {schedules.map((job) => {
             const isOpen = expandedSchedule === job.id;
+            const isNext = nextJob?.id === job.id;
             return (
-              <article
+              <div
                 key={job.id}
-                className={`schedule-tile ${job.destinationKind}${isOpen ? ' open' : ''}`}
+                className={`ov-schedule-row${isOpen ? ' open' : ''}${isNext ? ' next' : ''}`}
               >
                 <button
                   type="button"
-                  className="schedule-tile-head"
+                  className="ov-schedule-btn"
                   onClick={() => setExpandedSchedule(isOpen ? null : job.id)}
                   aria-expanded={isOpen}
                 >
-                  <div className="schedule-tile-main">
-                    <span className="schedule-time">{job.timeLabel || job.time}</span>
-                    <span className="schedule-title">{job.title}</span>
-                    <span
-                      className={`schedule-dest ${job.destinationKind || 'main'}`}
-                    >
-                      {job.destination}
+                  <span className="ov-schedule-time">{job.timeLabel || job.time}</span>
+                  <span className="ov-schedule-info">
+                    <span className="ov-schedule-title">
+                      {job.title}
+                      {isNext && <span className="ov-next-tag">Next</span>}
                     </span>
-                  </div>
-                  <div className="schedule-tile-meta">
-                    <span className="schedule-countdown">
+                    <span className="ov-schedule-dest">{job.destination}</span>
+                  </span>
+                  <span className="ov-schedule-right">
+                    <span className="ov-schedule-count">
                       {formatCountdown(job.remainingSeconds)}
                     </span>
-                    <span className="schedule-chevron">{isOpen ? '▲' : '▼'}</span>
-                  </div>
+                    <span className="ov-chevron">{isOpen ? '−' : '+'}</span>
+                  </span>
                 </button>
 
                 {isOpen && (
-                  <div className="schedule-tile-body">
-                    <p className="schedule-desc">{job.description}</p>
-                    {job.exampleNote && (
-                      <p className="schedule-note">{job.exampleNote}</p>
+                  <div className="ov-schedule-preview">
+                    {job.description && (
+                      <p className="ov-preview-desc">{job.description}</p>
                     )}
-                    <pre className="schedule-example">
+                    <pre className="ov-preview-msg">
                       {job.example || 'No preview available yet.'}
                     </pre>
                   </div>
                 )}
-              </article>
+              </div>
             );
           })}
         </div>
       </section>
 
-      <div className="overview-top">
-        <section className="overview-card">
-          <div className="overview-card-head">
-            <h2>Next Day Pairs</h2>
-            <span className="overview-badge">{preview?.dateKey || '—'}</span>
+      <div className="ov-split">
+        <section className="ov-card">
+          <div className="ov-section-head">
+            <div>
+              <h2>Next pairs</h2>
+              <p className="ov-hint">{preview?.previewLabel || '—'}</p>
+            </div>
+            <span className="ov-pill">{preview?.dateKey || '—'}</span>
           </div>
-          <p className="overview-label">{preview?.previewLabel || '—'}</p>
-          <p className="overview-meta">
-            Lead: <strong>{preview?.lead || '—'}</strong>
+
+          <p className="ov-lead">
+            Lead <strong>{preview?.lead || '—'}</strong>
           </p>
           {error && <p className="feedback err">{error}</p>}
-          <div className="pair-chips">
+
+          <div className="ov-chips">
             {preview?.allPairs?.map((pair) => (
-              <span key={pair.join('-')} className="pair-chip">
+              <span key={pair.join('-')} className="ov-chip">
                 {pair.join(' + ')}
               </span>
             ))}
           </div>
+
+          <pre className="ov-pairs-msg">{preview?.message || '—'}</pre>
         </section>
 
-        <section className="overview-card overview-message">
-          <h2>Pairs message preview</h2>
-          <pre className="message-preview">{preview?.message || '—'}</pre>
-        </section>
-      </div>
-
-      <div className="overview-bottom">
-        <section className={`overview-card live-panel${chatExpanded ? ' expanded' : ''}`}>
-          <div className="live-panel-head">
+        <section className="ov-card">
+          <div className="ov-section-head">
             <div>
-              <h2>Live Room Messages</h2>
-              <p className="overview-label">
-                Last 24 hours — older messages move to History
+              <h2>Review status</h2>
+              <p className="ov-hint">
+                {review?.active
+                  ? 'Pending before 6:50 PM reminder'
+                  : 'Opens after today’s pairs are sent'}
               </p>
             </div>
-            <button
-              type="button"
-              className="chat-expand-btn"
-              onClick={() => setChatExpanded((value) => !value)}
-            >
-              {chatExpanded ? 'Collapse chat' : 'Expand chat'}
-            </button>
           </div>
 
-          <div className={`live-messages-scroll${chatExpanded ? ' tall' : ''}`}>
-            <div className="live-messages">
-              {liveMessages.length === 0 ? (
-                <p className="muted live-empty">No messages in the last 24 hours…</p>
-              ) : (
-                liveMessages.map((msg) => (
-                  <div
-                    key={msg.eventId || msg.id}
-                    className={`live-msg ${msg.direction === 'out' ? 'out' : 'in'}`}
-                  >
-                    <div className="live-msg-head">
-                      <span className="live-sender">{msg.senderName}</span>
-                      <span className="live-time">{formatTime(msg.sentAt)}</span>
-                    </div>
-                    <p className="live-body">{msg.body}</p>
-                  </div>
-                ))
-              )}
+          {review?.reviewedMembers?.length > 0 && (
+            <div className="ov-review-block">
+              <p className="ov-review-label">Done</p>
+              <div className="ov-chips">
+                {review.reviewedMembers.map((name) => (
+                  <span key={name} className="ov-chip done">
+                    {name}
+                  </span>
+                ))}
+              </div>
             </div>
+          )}
+
+          <div className="ov-review-block">
+            <p className="ov-review-label">Pending</p>
+            {review?.pendingPairs?.length ? (
+              <div className="ov-chips">
+                {review.pendingPairs.map((pair) => (
+                  <span key={pair.join('-')} className="ov-chip pending">
+                    {pair.join(' + ')}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">
+                {review?.active ? 'All reviews submitted' : 'Nothing pending yet'}
+              </p>
+            )}
           </div>
         </section>
-
-        {!chatExpanded && (
-          <section className="overview-card review-panel">
-            <h2>Review Status</h2>
-            <p className="overview-label">
-              {review?.active
-                ? 'Pairs pending review before 6:50 PM reminder'
-                : 'Reviews open after daily pairs are sent'}
-            </p>
-
-            {review?.reviewedMembers?.length > 0 && (
-              <div className="review-section">
-                <span className="review-section-title">Completed</span>
-                <div className="pair-chips">
-                  {review.reviewedMembers.map((name) => (
-                    <span key={name} className="pair-chip done">
-                      {name} ✓
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="review-section">
-              <span className="review-section-title">Pending pairs</span>
-              {review?.pendingPairs?.length ? (
-                <div className="pair-chips">
-                  {review.pendingPairs.map((pair) => (
-                    <span key={pair.join('-')} className="pair-chip pending">
-                      {pair.join(' + ')}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted review-all-done">
-                  {review?.active ? 'All reviews submitted 🎉' : '—'}
-                </p>
-              )}
-            </div>
-          </section>
-        )}
       </div>
+
+      <section className={`ov-card ov-chat${chatExpanded ? ' expanded' : ''}`}>
+        <div className="ov-section-head">
+          <div>
+            <h2>Live room chat</h2>
+            <p className="ov-hint">Last 24 hours · older messages move to History</p>
+          </div>
+          <button
+            type="button"
+            className="ov-text-btn"
+            onClick={() => setChatExpanded((value) => !value)}
+          >
+            {chatExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+
+        <div className={`ov-chat-scroll${chatExpanded ? ' tall' : ''}`}>
+          {liveMessages.length === 0 ? (
+            <p className="muted ov-chat-empty">No messages in the last 24 hours</p>
+          ) : (
+            liveMessages.map((msg) => (
+              <article
+                key={msg.eventId || msg.id}
+                className={`ov-msg ${msg.direction === 'out' ? 'out' : 'in'}`}
+              >
+                <header className="ov-msg-head">
+                  <span>{msg.senderName}</span>
+                  <time>{formatTime(msg.sentAt)}</time>
+                </header>
+                <p className="ov-msg-body">{msg.body}</p>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
