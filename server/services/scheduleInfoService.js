@@ -121,12 +121,14 @@ export const getScheduledMessagesInfo = async () => {
         days: 'Mon–Fri',
         cron: config.missingReviewPromptCronSchedule,
         title: 'Personal Missing-Review Follow-up',
+        destination: 'Each member’s personal room',
+        destinationKind: 'personal',
         description:
           'Private message in each member’s own room asking why yesterday’s pair review was missing. Their reply updates attendance.',
         example: promptMessage,
         exampleForDate: formatDisplayDate(yesterdayKey),
         exampleNote: promptNote,
-        secondaryExampleTitle: qaPromptExample ? 'QA trio version (5 options)' : null,
+        secondaryExampleTitle: qaPromptExample ? 'QA trio version' : null,
         secondaryExample: qaPromptExample,
       },
       {
@@ -135,6 +137,8 @@ export const getScheduledMessagesInfo = async () => {
         days: 'Mon–Fri',
         cron: config.missedReviewCronSchedule,
         title: 'Missed Review Notice',
+        destination: 'Main Pair Reviews room',
+        destinationKind: 'main',
         description:
           'Posts yesterday’s missing pairs to the main room, including whatever each member answered in their personal room.',
         example: missedReviewMessage,
@@ -147,6 +151,8 @@ export const getScheduledMessagesInfo = async () => {
         days: 'Mon–Fri',
         cron: config.cronSchedule,
         title: 'Daily Pairs Message',
+        destination: 'Main Pair Reviews room',
+        destinationKind: 'main',
         description: 'Posts today’s pair assignments to the Element room.',
         example: dailyPairsMessage,
       },
@@ -156,6 +162,8 @@ export const getScheduledMessagesInfo = async () => {
         days: 'Mon–Fri',
         cron: config.reminderCronSchedule,
         title: 'Review Reminder',
+        destination: 'Main Pair Reviews room',
+        destinationKind: 'main',
         description:
           'Same-day reminder for pairs that have not submitted their review yet.',
         example: reminderMessage,

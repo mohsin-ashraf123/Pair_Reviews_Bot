@@ -11,7 +11,7 @@ import {
 } from '../services/pairBotService.js';
 import { getMemberRoomsOverview } from '../services/memberRoomViewService.js';
 import { joinMemberRooms } from '../services/memberRoomService.js';
-import { getNextDailySendTarget, cronTimeLabel } from '../services/pairService.js';
+import { getNextDailySendTarget, getAllScheduleCountdowns, cronTimeLabel } from '../services/pairService.js';
 import { getTodayReviewState } from '../services/reviewService.js';
 import { getLiveRoomMessages, getArchivedReviewMessages } from '../services/roomMessageService.js';
 import RoomMessage from '../models/RoomMessage.js';
@@ -57,17 +57,38 @@ router.get('/messages/live', async (req, res) => {
 
 router.get('/dashboard', async (req, res) => {
   try {
-    const [preview, countdown, review, messages] = await Promise.all([
-      getTodayPreview(),
-      Promise.resolve(getNextDailySendTarget()),
-      getTodayReviewState(),
-      getLiveRoomMessages(30),
-    ]);
+    const [preview, countdown, review, messages, scheduleInfo, scheduleCountdowns] =
+      await Promise.all([
+        getTodayPreview(),
+        Promise.resolve(getNextDailySendTarget()),
+        getTodayReviewState(),
+        getLiveRoomMessages(30),
+        getScheduledMessagesInfo(),
+        Promise.resolve(getAllScheduleCountdowns()),
+      ]);
+
+    const exampleById = Object.fromEntries(
+      (scheduleInfo.schedules || []).map((item) => [item.id, item])
+    );
+
+    const schedules = scheduleCountdowns.map((job) => {
+      const info = exampleById[job.id] || {};
+      return {
+        ...job,
+        description: info.description || '',
+        example: info.example || '',
+        exampleNote: info.exampleNote || null,
+        exampleForDate: info.exampleForDate || null,
+        days: info.days || 'Mon–Fri',
+      };
+    });
+
     res.json({
       preview,
       countdown,
       review,
       messages: messages.reverse(),
+      schedules,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

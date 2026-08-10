@@ -88,17 +88,6 @@ export const formatWrongPairAlert = (mentionedNames, pairs, senderName) => {
   ].join('\n');
 };
 
-export const formatDuplicatePairAlert = (matchedPair, senderName) => {
-  const label = matchedPair.join(' + ');
-  return [
-    '⚠️ Duplicate Pair Review',
-    '',
-    `Sent by: ${senderName || 'Unknown'}`,
-    `${label} — you already submitted a review for this pair today.`,
-    'Please delete the duplicate message in Element and keep only one review.',
-  ].join('\n');
-};
-
 export const buildPairKey = (pair) => [...pair].sort().join('|');
 
 export const recomputeReviewedMembers = async (dateKey) => {

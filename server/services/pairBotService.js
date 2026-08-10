@@ -8,8 +8,10 @@ import {
   getMonthSchedule,
   getPreviousWorkingDay,
   getFollowUpTargetDateKey,
+  isPastCronTimeToday,
   isWeekend,
 } from './pairService.js';
+import { config } from '../config/appConfig.js';
 import { sendMatrixMessage } from './matrixService.js';
 import { logOutgoingMessage } from './roomMessageService.js';
 import {
@@ -68,6 +70,9 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
   const jobKey = `daily_pairs:${dateKey}`;
 
   if (triggeredBy === 'cron') {
+    if (!isPastCronTimeToday(config.cronSchedule, 11, 30)) {
+      return { skipped: true, reason: 'Too early for daily pairs (waits until 11:30 AM)' };
+    }
     const claimed = await claimCronJob(jobKey, { jobType: 'daily_pairs', dateKey });
     if (!claimed) {
       return { skipped: true, reason: 'Already sent today', pairsData, message };
@@ -250,6 +255,18 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'Weekend — no notice' };
   }
 
+  // Never post the room summary in the same window as the personal DMs —
+  // members need time to reply. Stale Railway env used to fire both at 10:50.
+  if (
+    triggeredBy === 'cron' &&
+    !isPastCronTimeToday(config.missedReviewCronSchedule, 11, 20)
+  ) {
+    return {
+      skipped: true,
+      reason: 'Too early — room notice waits until after personal follow-ups',
+    };
+  }
+
   const yesterdayKey = getPreviousWorkingDay(todayKey);
   const review = await DailyReview.findOne({ dateKey: yesterdayKey });
 
@@ -260,6 +277,13 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
   if (pendingPairs.length === 0) {
     return { skipped: true, reason: 'All yesterday reviews completed' };
+  }
+
+  if (triggeredBy === 'cron' && !review.missingReviewPromptsSentAt) {
+    return {
+      skipped: true,
+      reason: 'Personal follow-ups not sent yet — room notice waits for replies',
+    };
   }
 
   const jobKey = `missed_review:${todayKey}:for:${yesterdayKey}`;

@@ -37,6 +37,10 @@ export const emitCountdownTick = (countdown) => {
   io?.emit('countdown:update', countdown);
 };
 
+export const emitSchedulesTick = (schedules) => {
+  io?.emit('schedules:update', schedules);
+};
+
 export const emitMemberRoomUpdate = (payload) => {
   io?.emit('member-room:update', payload);
 };

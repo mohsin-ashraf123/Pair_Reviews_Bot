@@ -308,16 +308,24 @@ export const getCurrentMonthParts = (date = new Date()) => {
   };
 };
 
-/** Next weekday daily-pairs send target (Asia/Karachi). */
-export const getNextDailySendTarget = (date = new Date()) => {
+/** Next weekday occurrence of a cron HH:MM expression (Asia/Karachi). */
+export const getNextCronTarget = (
+  expression,
+  fallbackHour,
+  fallbackMinute,
+  date = new Date()
+) => {
+  const { hour, minute } = parseCronTime(expression, fallbackHour, fallbackMinute);
   const todayKey = getKarachiDateKey(date);
   let candidateKey = todayKey;
 
-  if (isWeekend(todayKey) || isPastDailySendTime(date)) {
+  if (isWeekend(todayKey) || isPastCronTimeToday(expression, fallbackHour, fallbackMinute, date)) {
     candidateKey = isWeekend(todayKey) ? nextWorkingDay(todayKey) : addWorkingDays(todayKey, 1);
   }
 
-  const label = new Intl.DateTimeFormat('en-US', {
+  const targetMs = karachiWallTimeToUtcMs(candidateKey, hour, minute);
+  const remainingMs = Math.max(0, targetMs - Date.now());
+  const labelFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: config.timezone,
     weekday: 'short',
     month: 'short',
@@ -327,16 +335,82 @@ export const getNextDailySendTarget = (date = new Date()) => {
     hour12: true,
   });
 
-  const targetMs = karachiWallTimeToUtcMs(candidateKey, SEND_HOUR, SEND_MINUTE);
-  const remainingMs = Math.max(0, targetMs - Date.now());
-
   return {
     nextSendAt: new Date(targetMs).toISOString(),
     nextSendDateKey: candidateKey,
     remainingMs,
     remainingSeconds: Math.floor(remainingMs / 1000),
-    label: `Next pairs message · ${label.format(new Date(targetMs))}`,
+    timeLabel: cronTimeLabel(expression, fallbackHour, fallbackMinute),
+    nextLabel: labelFmt.format(new Date(targetMs)),
     timezone: config.timezone,
+  };
+};
+
+/** Countdown chips for every automated message the bot sends. */
+export const getAllScheduleCountdowns = (date = new Date()) => {
+  const jobs = [
+    {
+      id: 'missing_review_prompts',
+      title: 'Personal follow-ups',
+      destination: 'Each member’s personal room',
+      destinationKind: 'personal',
+      cron: config.missingReviewPromptCronSchedule,
+      fallbackHour: 10,
+      fallbackMinute: 50,
+    },
+    {
+      id: 'missed_review',
+      title: 'Missed review notice',
+      destination: 'Main Pair Reviews room',
+      destinationKind: 'main',
+      cron: config.missedReviewCronSchedule,
+      fallbackHour: 11,
+      fallbackMinute: 20,
+    },
+    {
+      id: 'daily_pairs',
+      title: 'Today’s pairs',
+      destination: 'Main Pair Reviews room',
+      destinationKind: 'main',
+      cron: config.cronSchedule,
+      fallbackHour: 11,
+      fallbackMinute: 30,
+    },
+    {
+      id: 'review_reminder',
+      title: 'Review reminder',
+      destination: 'Main Pair Reviews room',
+      destinationKind: 'main',
+      cron: config.reminderCronSchedule,
+      fallbackHour: 18,
+      fallbackMinute: 50,
+    },
+  ];
+
+  return jobs.map((job) => {
+    const target = getNextCronTarget(
+      job.cron,
+      job.fallbackHour,
+      job.fallbackMinute,
+      date
+    );
+    return {
+      ...job,
+      ...target,
+    };
+  });
+};
+
+/** Next weekday daily-pairs send target (Asia/Karachi). */
+export const getNextDailySendTarget = (date = new Date()) => {
+  const target = getNextCronTarget(config.cronSchedule, 11, 30, date);
+  return {
+    nextSendAt: target.nextSendAt,
+    nextSendDateKey: target.nextSendDateKey,
+    remainingMs: target.remainingMs,
+    remainingSeconds: target.remainingSeconds,
+    label: `Next pairs message · ${target.nextLabel}`,
+    timezone: target.timezone,
   };
 };
 

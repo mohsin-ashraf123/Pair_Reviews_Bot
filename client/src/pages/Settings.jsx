@@ -106,6 +106,7 @@ function Settings() {
                   <h4>{item.title}</h4>
                   <p className="schedule-meta">
                     {item.days} · {item.time}
+                    {item.destination ? ` · ${item.destination}` : ''}
                     {item.exampleForDate ? ` · for ${item.exampleForDate}` : ''}
                   </p>
                 </div>

@@ -5,7 +5,6 @@ import { resolveMemberName } from './memberService.js';
 import {
   recordReviewFromMessage,
   formatWrongPairAlert,
-  formatDuplicatePairAlert,
   handleReviewMessageDeleted,
 } from './reviewService.js';
 import { sendMatrixMessage, sendMatrixMessageToRoom } from './matrixService.js';
@@ -23,6 +22,21 @@ import {
 const LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const seenEvents = new Set();
 
+/** Matrix edit events carry the new body under m.new_content and point at the original. */
+const getEditTargetEventId = (content = {}) => {
+  const relatesTo = content['m.relates_to'];
+  if (relatesTo?.rel_type === 'm.replace' && relatesTo.event_id) {
+    return relatesTo.event_id;
+  }
+  return null;
+};
+
+const getEffectiveBody = (content = {}) => {
+  const edited = content['m.new_content']?.body;
+  if (typeof edited === 'string' && edited.trim()) return edited.trim();
+  return (content.body || '').trim();
+};
+
 const classifyBotMessage = (body) => {
   if (body.startsWith('Pairs Today')) return 'bot_pairs';
   if (body.startsWith('🔔 Review Reminder')) return 'bot_reminder';
@@ -36,11 +50,11 @@ const classifyBotMessage = (body) => {
 
 const normalizeEvent = (event, direction = 'in', botUserId = null) => {
   const content = event.content || {};
-  const msgtype = content.msgtype || 'm.text';
+  const msgtype = content.msgtype || content['m.new_content']?.msgtype || 'm.text';
   if (!['m.text', 'm.notice', 'm.emote'].includes(msgtype)) return null;
 
-  const body = content.body;
-  if (!body?.trim()) return null;
+  const body = getEffectiveBody(content);
+  if (!body) return null;
 
   const eventId = event.event_id;
   if (!eventId || seenEvents.has(eventId)) return null;
@@ -54,12 +68,9 @@ const normalizeEvent = (event, direction = 'in', botUserId = null) => {
       senderId.split(':')[0]?.slice(1) ||
       'Unknown';
 
-  const trimmedBody = body.trim();
   let category = 'team_review';
   if (isBot) {
-    category = classifyBotMessage(trimmedBody);
-  } else if (!resolveMemberName(senderId, event.content?.displayname || '')) {
-    category = 'team_review'; // external user — still show in live/history
+    category = classifyBotMessage(body);
   }
 
   return {
@@ -68,11 +79,12 @@ const normalizeEvent = (event, direction = 'in', botUserId = null) => {
     roomId: event.room_id || config.matrix.roomId,
     senderId,
     senderName,
-    body: trimmedBody,
+    body,
     direction: isBot ? 'out' : direction,
     category,
     messageType: msgtype,
     sentAt: new Date(event.origin_server_ts || Date.now()),
+    replacesEventId: getEditTargetEventId(content),
   };
 };
 
@@ -102,23 +114,63 @@ const sendWrongPairAlert = async (mentionedNames, pairs, senderName, senderId, r
   }
 };
 
-const sendDuplicatePairAlert = async (matchedPair, senderName, senderId, relatedEventId) => {
-  try {
-    const message = formatDuplicatePairAlert(matchedPair, senderName);
-    const result = await sendMatrixMessage(message);
-    await logOutgoingMessage(message, result.event_id, 'bot_duplicate', {
-      alertTriggeredBy: senderName,
-      alertTriggeredById: senderId,
-      relatedEventId,
-      attemptedPair: matchedPair,
-    });
-  } catch (error) {
-    console.error('Failed to send duplicate pair alert:', error.message);
+/**
+ * Apply an Element edit onto the original review message. Never treat the
+ * replace event as a second review — that was firing duplicate / wrong-pair
+ * warnings whenever someone fixed a typo.
+ */
+const applyMessageEdit = async (payload) => {
+  const original = await RoomMessage.findOne({ eventId: payload.replacesEventId });
+  if (!original) {
+    // Original not in our DB — store the edit quietly without review side-effects.
+    const { replacesEventId, ...rest } = payload;
+    return RoomMessage.findOneAndUpdate(
+      { eventId: rest.eventId },
+      { ...rest, category: 'team_review' },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
+
+  original.body = payload.body;
+  await original.save();
+
+  if (original.countsAsReview || original.category === 'team_review') {
+    const { recomputeReviewedMembers } = await import('./reviewService.js');
+    await RoomMessage.updateOne(
+      { eventId: original.eventId },
+      {
+        $set: { body: payload.body },
+        $unset: {
+          reviewIssue: 1,
+          attemptedPair: 1,
+          countsAsReview: 1,
+          matchedPair: 1,
+          pairKey: 1,
+        },
+      }
+    );
+
+    // Re-evaluate the edited body. Never send room alerts for edits.
+    await recordReviewFromMessage(payload.body, original.dateKey, original.eventId);
+    await recomputeReviewedMembers(original.dateKey);
+  }
+
+  const refreshed = await RoomMessage.findOne({ eventId: original.eventId });
+  const age = Date.now() - new Date((refreshed || original).sentAt).getTime();
+  if (age <= LIVE_WINDOW_MS) {
+    emitRoomMessage(toLivePayload(refreshed || original));
+  }
+
+  console.log(`[room] Applied edit to ${original.eventId} (ignored replace ${payload.eventId})`);
+  return refreshed || original;
 };
 
 export const persistAndBroadcastMessage = async (payload) => {
   try {
+    if (payload.replacesEventId) {
+      return await applyMessageEdit(payload);
+    }
+
     const saved = await RoomMessage.findOneAndUpdate(
       { eventId: payload.eventId },
       payload,
@@ -136,17 +188,12 @@ export const persistAndBroadcastMessage = async (payload) => {
         saved.dateKey,
         saved.eventId
       );
+      // Duplicate submissions are logged silently — never warn in the room.
+      // Edits are handled above via m.replace and never reach this path.
       if (result?.status === 'wrong_pair') {
         await sendWrongPairAlert(
           result.mentionedNames,
           result.pairs,
-          saved.senderName,
-          saved.senderId,
-          saved.eventId
-        );
-      } else if (result?.status === 'duplicate_pair') {
-        await sendDuplicatePairAlert(
-          result.matchedPair,
           saved.senderName,
           saved.senderId,
           saved.eventId

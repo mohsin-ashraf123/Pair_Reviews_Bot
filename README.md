@@ -97,6 +97,11 @@ Uzair will make sure all above today
 | 11:30 AM | Today's pairs | Main room |
 | 6:50 PM | Reminder for pairs that still have not submitted | Main room |
 
+> If Railway still has old values like `MISSED_REVIEW_CRON_SCHEDULE=50 10` or
+> `CRON_SCHEDULE=0 11`, the bot now **corrects the order automatically** so
+> personal DMs always go out before the room summary, and today's pairs wait
+> until 11:30 AM.
+
 ## Missing review follow-ups
 
 Each member has a personal room (`MEMBER_ROOM_MAP`). When their pair review is

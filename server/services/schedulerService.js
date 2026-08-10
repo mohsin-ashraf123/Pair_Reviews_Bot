@@ -6,8 +6,8 @@ import {
   sendMissedReviewNotice,
   sendMissingReviewFollowUps,
 } from './pairBotService.js';
-import { getNextDailySendTarget } from './pairService.js';
-import { emitCountdownTick } from './socketService.js';
+import { getNextDailySendTarget, getAllScheduleCountdowns } from './pairService.js';
+import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
 
 let pairsTask = null;
 let reminderTask = null;
@@ -39,6 +39,7 @@ const runCronJob = async (key, fn) => {
 const broadcastCountdown = () => {
   try {
     emitCountdownTick(getNextDailySendTarget());
+    emitSchedulesTick(getAllScheduleCountdowns());
   } catch {
     // ignore
   }
@@ -49,6 +50,11 @@ export const startPairScheduler = () => {
     console.log('[cron] Scheduler disabled — set ENABLE_CRON_SCHEDULER=true to run crons on this instance');
     return null;
   }
+
+  console.log(
+    `[cron] Morning order locked: prompts=${config.missingReviewPromptCronSchedule} → ` +
+      `missed=${config.missedReviewCronSchedule} → pairs=${config.cronSchedule} (${config.timezone})`
+  );
 
   if (!cron.validate(config.cronSchedule)) {
     console.error(`Invalid CRON_SCHEDULE: ${config.cronSchedule}`);
