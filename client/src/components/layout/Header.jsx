@@ -1,45 +1,69 @@
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useBotStatus } from '../../context/BotStatusContext';
 import '../../pages/Dashboard.css';
 
+const PAGE_TITLES = {
+  '/dashboard': 'Overview',
+  '/dashboard/pairs': 'Pairs',
+  '/dashboard/history': 'History',
+  '/dashboard/performance': 'Performance',
+  '/dashboard/members': 'Member Rooms',
+  '/dashboard/leads': 'Lead Reports',
+  '/dashboard/ai': 'AI Analyzed',
+  '/dashboard/settings': 'Settings',
+};
+
 function Header() {
   const { user } = useAuth();
   const { status } = useBotStatus();
+  const { pathname } = useLocation();
 
   const connected = status?.matrixConnected;
   const e2ee = status?.e2eeReady;
+  const pageTitle = PAGE_TITLES[pathname] || 'Dashboard';
 
   return (
     <header className="header">
-      <div className="header-left">
-        <div className="header-logo">EP</div>
+      <div className="header-left header-mobile-brand">
+        <div className="header-logo" aria-hidden>
+          EP
+        </div>
         <div className="header-title-wrap">
-          <h1 className="header-title">
-            <span className="header-title-full">Element Pair Review Bot</span>
-            <span className="header-title-short">Pair Review</span>
-          </h1>
-          <p className="header-subtitle">Daily pair automation for Element</p>
+          <h1 className="header-title">Pair Review</h1>
         </div>
       </div>
 
+      <div className="header-page">
+        <p className="header-page-kicker">Dashboard</p>
+        <h1 className="header-page-title">{pageTitle}</h1>
+      </div>
+
       <div className="header-right">
-        <div className="header-status">
+        <div className="header-status" aria-label="Bot status">
           <span
-            className={`header-pill ${connected ? 'good' : 'bad'}`}
-            title={status?.roomName || 'Element connection'}
+            className={`header-dot ${connected ? 'good' : 'bad'}`}
+            title={connected ? 'Matrix connected' : 'Matrix offline'}
           >
-            {connected ? '● Connected' : '● Offline'}
+            <span className="header-dot-mark" />
+            {connected ? 'Online' : 'Offline'}
           </span>
           {connected && (
-            <span className={`header-pill ${e2ee ? 'good' : 'warn'}`}>
-              {e2ee ? 'E2EE Ready' : 'E2EE Pending'}
+            <span
+              className={`header-dot ${e2ee ? 'good' : 'warn'}`}
+              title={e2ee ? 'End-to-end encryption ready' : 'E2EE still syncing'}
+            >
+              <span className="header-dot-mark" />
+              {e2ee ? 'E2EE' : 'E2EE…'}
             </span>
           )}
-          {status?.roomName && (
-            <span className="header-room">{status.roomName}</span>
-          )}
         </div>
-        <span className="header-user">{user}</span>
+        <div className="header-user-chip" title={user || 'Admin'}>
+          <span className="header-user-avatar" aria-hidden>
+            {(user || 'A').slice(0, 1).toUpperCase()}
+          </span>
+          <span className="header-user-name">{user || 'Admin'}</span>
+        </div>
       </div>
     </header>
   );

@@ -73,3 +73,13 @@ export const resolveMemberName = (userId, displayName = '') => {
 export const isTeamMember = (name) => getAllMembers().includes(name);
 
 export const isMemberMapReady = () => initialized;
+
+/** Resolve Matrix user id for a team display name. */
+export const getMatrixIdForMember = (name) => {
+  if (!name) return null;
+  if (config.memberMatrixMap?.[name]) return config.memberMatrixMap[name];
+  for (const [userId, mapped] of matrixIdToName.entries()) {
+    if (mapped === name) return userId;
+  }
+  return null;
+};

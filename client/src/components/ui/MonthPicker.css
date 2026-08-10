@@ -11,13 +11,13 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.55rem 0.85rem;
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-elevated);
   color: var(--text);
   font-size: 0.875rem;
   font-weight: 500;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 

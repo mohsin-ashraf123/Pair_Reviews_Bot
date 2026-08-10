@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { API, createSocket } from '../config/api.js';
+import { API, API_BASE, createSocket } from '../config/api.js';
 import './MemberRooms.css';
-
-function formatDateTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-PK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-}
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -20,23 +12,84 @@ function formatTime(iso) {
   });
 }
 
-function statusMeta(item, sendTimeLabel) {
-  if (item.prompt?.status === 'answered') {
-    return { label: 'Answered', tone: 'answered' };
+function snippet(text, max = 72) {
+  if (!text) return '';
+  const oneLine = String(text).replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= max) return oneLine;
+  return `${oneLine.slice(0, max - 1)}…`;
+}
+
+function avatarSrc(path) {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  return `${API_BASE}${path}`;
+}
+
+function MemberAvatar({ member, avatarUrl }) {
+  const [failed, setFailed] = useState(false);
+  const initials = (member || '?').slice(0, 2).toUpperCase();
+
+  if (!avatarUrl || failed) {
+    return (
+      <span className="member-avatar fallback" aria-hidden>
+        {initials}
+      </span>
+    );
   }
-  if (item.prompt?.status === 'failed') {
-    return { label: 'Send failed', tone: 'failed' };
+
+  return (
+    <img
+      className="member-avatar"
+      src={avatarSrc(avatarUrl)}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function statusMeta(item, leadTimeLabel, discussionTimeLabel) {
+  if (item.discussion?.status === 'pending') {
+    return { label: 'Awaiting meeting reply', tone: 'awaiting' };
   }
-  if (item.prompt?.status === 'pending') {
-    return { label: 'Awaiting reply', tone: 'awaiting' };
+  if (item.discussion?.status === 'answered') {
+    return { label: 'Meeting check done', tone: 'done' };
+  }
+  if (item.discussion?.willSend) {
+    return { label: `Meeting · ${discussionTimeLabel}`, tone: 'discussion' };
   }
   if (item.preview?.willSend) {
-    return { label: `Will be sent ${sendTimeLabel}`, tone: 'queued' };
+    return { label: `Lead · ${leadTimeLabel}`, tone: 'queued' };
   }
   if (item.reviewSubmitted) {
-    return { label: 'Review submitted', tone: 'done' };
+    return { label: 'Review in', tone: 'done' };
   }
-  return { label: 'Nothing pending', tone: 'idle' };
+  if (!item.joined) {
+    return { label: 'Not joined', tone: 'failed' };
+  }
+  return { label: 'Idle', tone: 'idle' };
+}
+
+function MemberRoomsSkeleton() {
+  return (
+    <div className="member-rooms-page member-rooms-skeleton" aria-busy="true">
+      <div className="member-rooms-header">
+        <div>
+          <span className="mr-skel-line mr-skel-title" />
+          <span className="mr-skel-line mr-skel-sub" />
+        </div>
+      </div>
+      <div className="member-room-list">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="mr-skel-row">
+            <span className="mr-skel-line mr-skel-avatar" />
+            <span className="mr-skel-line mr-skel-name" />
+            <span className="mr-skel-line mr-skel-status" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function MemberRooms() {
@@ -85,44 +138,49 @@ function MemberRooms() {
     }
   };
 
-  const counts = useMemo(() => {
-    const members = data?.members || [];
-    return {
-      queued: members.filter((m) => m.preview?.willSend).length,
-      pending: members.filter((m) => m.prompt?.status === 'pending').length,
-      answered: members.filter((m) => m.prompt?.status === 'answered').length,
-      submitted: members.filter((m) => m.reviewSubmitted).length,
-    };
-  }, [data]);
+  const leadTimeLabel = data?.sendTimeLabel || '10:50 AM';
+  const discussionTimeLabel = data?.discussionTimeLabel || '5:00 PM';
+  const discussionQueued = data?.discussionQueued || [];
 
-  const sendTimeLabel = data?.sendTimeLabel || '10:50 AM';
+  const sortedMembers = useMemo(() => {
+    const members = [...(data?.members || [])];
+    members.sort((a, b) => {
+      const score = (item) => {
+        if (item.discussion?.willSend || item.discussion?.status === 'pending')
+          return 0;
+        if (item.preview?.willSend) return 1;
+        return 2;
+      };
+      const diff = score(a) - score(b);
+      if (diff !== 0) return diff;
+      return a.member.localeCompare(b.member);
+    });
+    return members;
+  }, [data?.members]);
 
-  if (loading) {
-    return (
-      <div className="content-card">
-        <p className="muted">Loading member rooms…</p>
-      </div>
-    );
-  }
+  if (loading) return <MemberRoomsSkeleton />;
 
   return (
     <div className="member-rooms-page">
       <div className="member-rooms-header">
         <div>
+          <p className="member-rooms-kicker">Personal rooms</p>
           <h2>Member Rooms</h2>
-          <p className="muted">
-            Tracking reviews for {data?.targetDateLabel || '—'} — whoever is still
-            missing gets a private message at {sendTimeLabel}
+          <p className="member-rooms-subtitle">
+            {data?.targetDateLabel || '—'} follow-ups · meeting check at{' '}
+            {discussionTimeLabel}
           </p>
         </div>
         <div className="member-rooms-actions">
           <button
             type="button"
             className="refresh-btn"
-            onClick={() => runAction('join', '/member-rooms/join', 'Room join refreshed')}
+            onClick={() =>
+              runAction('join', '/member-rooms/join', 'Rooms refreshed')
+            }
             disabled={Boolean(busy)}
           >
-            {busy === 'join' ? 'Joining…' : 'Re-join rooms'}
+            {busy === 'join' ? 'Joining…' : 'Re-join'}
           </button>
           <button
             type="button"
@@ -131,12 +189,12 @@ function MemberRooms() {
               runAction(
                 'prompts',
                 '/member-rooms/send-prompts',
-                'Follow-up messages processed'
+                'Follow-ups processed'
               )
             }
             disabled={Boolean(busy)}
           >
-            {busy === 'prompts' ? 'Sending…' : 'Send follow-ups now'}
+            {busy === 'prompts' ? 'Sending…' : 'Send now'}
           </button>
         </div>
       </div>
@@ -144,103 +202,73 @@ function MemberRooms() {
       {error && <p className="feedback err">{error}</p>}
       {feedback && <p className="feedback ok">{feedback}</p>}
 
-      <div className="member-stats">
-        <div className="member-stat done">
-          <span className="member-stat-value">{counts.submitted}</span>
-          <span className="member-stat-label">Review submitted</span>
+      <section className="member-queue-banner">
+        <div className="member-queue-banner-copy">
+          <p className="member-queue-kicker">Today · {discussionTimeLabel}</p>
+          <h3>Meeting discussion check</h3>
+          <p>
+            {discussionQueued.length
+              ? `Asking if yesterday’s pair review (${data?.discussionReviewDateLabel || '—'}) was discussed in today’s meeting.`
+              : data?.discussionNote ||
+                'No meeting-check DMs queued for today.'}
+          </p>
         </div>
-        <div className="member-stat queued">
-          <span className="member-stat-value">{counts.queued}</span>
-          <span className="member-stat-label">Will be messaged</span>
-        </div>
-        <div className="member-stat awaiting">
-          <span className="member-stat-value">{counts.pending}</span>
-          <span className="member-stat-label">Awaiting reply</span>
-        </div>
-        <div className="member-stat answered">
-          <span className="member-stat-value">{counts.answered}</span>
-          <span className="member-stat-label">Answered</span>
-        </div>
-      </div>
-
-      <section className="member-summary">
-        <div className="member-summary-block">
-          <h3>Will be messaged at {sendTimeLabel}</h3>
-          {data?.queued?.length ? (
-            <div className="member-chip-row">
-              {data.queued.map((name) => (
-                <span key={name} className="member-chip queued">
-                  {name}
-                </span>
-              ))}
-            </div>
+        <div className="member-queue-people">
+          {discussionQueued.length ? (
+            discussionQueued.map((entry) => {
+              const memberItem = data?.members?.find(
+                (m) => m.member === entry.member
+              );
+              return (
+                <button
+                  key={entry.member}
+                  type="button"
+                  className="member-queue-chip"
+                  onClick={() => setOpenMember(entry.member)}
+                  title={
+                    entry.pair?.length
+                      ? entry.pair.join(' + ')
+                      : entry.member
+                  }
+                >
+                  <MemberAvatar
+                    member={entry.member}
+                    avatarUrl={memberItem?.avatarUrl}
+                  />
+                  <span>
+                    <strong>{entry.member}</strong>
+                    {entry.pair?.length ? (
+                      <small>{entry.pair.join(' + ')}</small>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })
           ) : (
-            <p className="muted">
-              No one — every review for {data?.targetDateLabel} is in.
-            </p>
+            <p className="muted">Nobody in the 5:00 PM queue right now.</p>
           )}
-        </div>
-
-        <div className="member-summary-block">
-          <h3>Responses received</h3>
-          {data?.answers?.length ? (
-            <ul className="member-answer-list">
-              {data.answers.map((answer) => (
-                <li key={answer.member}>
-                  <span className="member-answer-who">{answer.member}</span>
-                  <span className="member-answer-pair">{answer.pair.join(' + ')}</span>
-                  <span className="member-answer-letter">{answer.letter}</span>
-                  <span className="member-answer-label">{answer.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No replies yet.</p>
-          )}
-        </div>
-
-        <div className="member-summary-block">
-          <h3>Attendance from replies</h3>
-          <div className="member-chip-row">
-            {data?.attendance?.absent?.map((name) => (
-              <span key={`a-${name}`} className="member-chip absent">
-                {name} · absent
-              </span>
-            ))}
-            {data?.attendance?.halfDay?.map((name) => (
-              <span key={`h-${name}`} className="member-chip half-day">
-                {name} · half day
-              </span>
-            ))}
-            {data?.attendance?.forgot?.map((name) => (
-              <span key={`f-${name}`} className="member-chip forgot">
-                {name} · forgot
-              </span>
-            ))}
-            {data?.attendance?.excused?.map((name) => (
-              <span key={`e-${name}`} className="member-chip excused">
-                {name} · excused
-              </span>
-            ))}
-            {!data?.attendance?.absent?.length &&
-              !data?.attendance?.halfDay?.length &&
-              !data?.attendance?.forgot?.length &&
-              !data?.attendance?.excused?.length && (
-                <p className="muted">Nothing marked from replies yet.</p>
-              )}
-          </div>
         </div>
       </section>
 
       <div className="member-room-list">
-        {data?.members?.map((item) => {
-          const status = statusMeta(item, sendTimeLabel);
+        <div className="member-room-list-head">
+          <h3>Conversations</h3>
+          <span>{sortedMembers.length} rooms</span>
+        </div>
+
+        {sortedMembers.map((item) => {
+          const status = statusMeta(item, leadTimeLabel, discussionTimeLabel);
           const isOpen = openMember === item.member;
-          const shownMessage = item.prompt?.message || item.preview?.message;
-          const options = item.prompt?.options || item.preview?.options || [];
+          const previewText =
+            (item.discussion?.willSend && item.discussion.message) ||
+            item.lastMessagePreview ||
+            (item.pair ? item.pair.join(' + ') : 'No messages yet');
 
           return (
-            <article key={item.member} className={`member-room-card ${status.tone}`}>
+            <article
+              key={item.member}
+              className={`member-room-card ${status.tone}${isOpen ? ' open' : ''}`}
+            >
               <button
                 type="button"
                 className="member-room-head"
@@ -248,88 +276,71 @@ function MemberRooms() {
                 aria-expanded={isOpen}
               >
                 <div className="member-room-identity">
-                  <span className="member-avatar">{item.member.slice(0, 2)}</span>
+                  <MemberAvatar
+                    member={item.member}
+                    avatarUrl={item.avatarUrl}
+                  />
                   <div className="member-room-titles">
-                    <span className="member-room-name">{item.member}</span>
+                    <span className="member-room-name">
+                      {item.member}
+                      {item.isLead ? (
+                        <span className="member-lead-tag">Lead</span>
+                      ) : null}
+                    </span>
                     <span className="member-room-sub">
-                      {item.pair ? item.pair.join(' + ') : 'No pair for this date'}
+                      {snippet(previewText)}
                     </span>
                   </div>
                 </div>
                 <div className="member-room-meta">
-                  <span className={`member-status ${status.tone}`}>{status.label}</span>
-                  {!item.joined && <span className="member-status failed">Not joined</span>}
-                  <span className="member-chevron">{isOpen ? '▲' : '▼'}</span>
+                  <span className={`member-status ${status.tone}`}>
+                    {status.label}
+                  </span>
+                  <span className="member-chevron" aria-hidden>
+                    {isOpen ? '▾' : '▸'}
+                  </span>
                 </div>
               </button>
 
-              {item.prompt?.response?.letter && (
-                <p className="member-answer">
-                  <strong>{item.prompt.response.letter}</strong> — {item.prompt.response.label}
-                  <span className="member-answer-time">
-                    {formatDateTime(item.prompt.response.respondedAt)}
-                  </span>
-                </p>
-              )}
-
               {isOpen && (
                 <div className="member-room-body">
-                  <div className="member-room-info">
-                    <span className="member-info-chip">{item.roomId}</span>
-                    <span className="member-info-chip">
-                      Last sent: {formatDateTime(item.lastPromptAt)}
-                    </span>
-                    <span className="member-info-chip">
-                      Last reply: {formatDateTime(item.lastReplyAt)}
-                    </span>
-                  </div>
-
                   {item.joinError && (
                     <p className="feedback err">Join error: {item.joinError}</p>
                   )}
-                  {item.prompt?.sendError && (
-                    <p className="feedback err">Send error: {item.prompt.sendError}</p>
-                  )}
 
-                  <h4 className="member-section-title">
-                    {item.prompt ? 'Message sent' : 'Message preview'}
-                  </h4>
-                  <pre className="member-message-preview">
-                    {shownMessage || 'No follow-up needed for this member.'}
-                  </pre>
-
-                  {options.length > 0 && (
-                    <div className="member-options">
-                      {options.map((opt) => (
-                        <span
-                          key={opt.letter}
-                          className={`member-option ${
-                            item.prompt?.response?.letter === opt.letter ? 'chosen' : ''
-                          }`}
-                        >
-                          <strong>{opt.letter}</strong> {opt.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <h4 className="member-section-title">Room conversation</h4>
                   <div className="member-thread">
-                    {item.messages.length ? (
+                    {item.messages?.length ? (
                       item.messages.map((msg) => (
                         <div
                           key={msg.eventId || msg.id}
-                          className={`member-msg ${msg.direction === 'out' ? 'out' : 'in'}`}
+                          className={`member-msg ${
+                            msg.direction === 'out' ? 'out' : 'in'
+                          }${msg.scheduled ? ' scheduled' : ''}`}
                         >
                           <div className="member-msg-head">
-                            <span>{msg.senderName}</span>
-                            <span>{formatTime(msg.sentAt)}</span>
+                            <span>
+                              {msg.scheduled
+                                ? msg.scheduleKind === 'discussion'
+                                  ? `Scheduled · ${discussionTimeLabel}`
+                                  : `Scheduled · ${leadTimeLabel}`
+                                : msg.senderName ||
+                                  (msg.direction === 'out'
+                                    ? 'Bot'
+                                    : item.member)}
+                            </span>
+                            <span>
+                              {msg.scheduled
+                                ? 'pending'
+                                : formatTime(msg.sentAt)}
+                            </span>
                           </div>
                           <p className="member-msg-body">{msg.body}</p>
                         </div>
                       ))
                     ) : (
-                      <p className="muted">No messages in this room yet.</p>
+                      <p className="muted member-thread-empty">
+                        No messages in this room yet.
+                      </p>
                     )}
                   </div>
                 </div>

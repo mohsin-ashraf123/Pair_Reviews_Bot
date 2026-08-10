@@ -13,6 +13,7 @@ import { config, isMatrixConfigured } from '../config/appConfig.js';
 import { RustEngine } from 'matrix-bot-sdk/lib/e2ee/RustEngine.js';
 import { initMemberMap } from './memberService.js';
 import { registerMatrixRoomListener } from './roomMessageService.js';
+import { recordBotSendFailure } from './botSendLogService.js';
 
 // Patch: Synapse rejects device_keys: null AND duplicate OTKs. Handle both gracefully.
 RustEngine.prototype.processKeysUploadRequest = async function processKeysUploadFixed(
@@ -285,12 +286,32 @@ const createEncryptedClient = async (session) => {
       const userId = await client.getUserId();
       const { UserId: UId } = await import('@matrix-org/matrix-sdk-crypto-nodejs');
       const { SYNC_LOCK_NAME: LOCK } = await import('matrix-bot-sdk/lib/e2ee/RustEngine.js');
+      const { getMemberRoomIds } = await import('./memberRoomService.js');
 
       await engine.lock.acquire(LOCK, async () => {
-        // Track bot's own user + all room members
-        const members = await client.getJoinedRoomMembers(config.matrix.roomId);
-        if (!members.includes(userId)) members.push(userId);
-        const uids = members.map(u => new UId(u));
+        // Track bot's own user + main room + every personal member room.
+        const tracked = new Set([userId]);
+        const roomIds = [
+          config.matrix.roomId,
+          ...getMemberRoomIds(),
+        ].filter(Boolean);
+
+        for (const rid of roomIds) {
+          try {
+            const members = await client.getJoinedRoomMembers(rid);
+            for (const m of members) tracked.add(m);
+          } catch (error) {
+            console.warn(`[crypto] Could not list members for ${rid}: ${error.message}`);
+          }
+        }
+
+        // Also track configured Matrix user IDs even if not yet joined.
+        for (const mxid of Object.values(config.memberMatrixMap || {})) {
+          if (mxid) tracked.add(mxid);
+        }
+
+        const uids = [...tracked].map((u) => new UId(u));
+        console.log(`[crypto] Tracking ${uids.length} users across ${roomIds.length} rooms`);
         await engine.machine.updateTrackedUsers(uids);
 
         // Process all pending requests (keys upload/query/claim/to-device)
@@ -347,6 +368,9 @@ const allowUntrustedDeviceKeyShare = async (client) => {
   engine.prepareEncrypt = async function prepareEncryptAllDevices(roomId, roomInfo) {
     const members = (await this.client.getJoinedRoomMembers(roomId)).map(
       (u) => new UserId(u)
+    );
+    console.log(
+      `[crypto] prepareEncrypt room=${roomId} members=${members.length}`
     );
 
     let historyVis = 1;
@@ -451,20 +475,74 @@ export const getMatrixClient = async () => {
   return clientPromise;
 };
 
-export const sendMatrixMessage = async (body) => {
-  const client = await getMatrixClient();
+/**
+ * Send to the main Pair Reviews room.
+ * Optional `meta` is stored on failure for History (kind, dateKey, member, triggeredBy).
+ */
+export const sendMatrixMessage = async (body, meta = {}) => {
   const roomId = config.matrix.roomId;
-
-  const eventId = await client.sendText(roomId, body);
-  return { event_id: eventId };
+  try {
+    const client = await getMatrixClient();
+    const eventId = await client.sendText(roomId, body);
+    return { event_id: eventId };
+  } catch (error) {
+    await recordBotSendFailure({
+      kind: meta.kind || 'room_message',
+      roomId,
+      member: meta.member || null,
+      body,
+      error,
+      dateKey: meta.dateKey || null,
+      triggeredBy: meta.triggeredBy || null,
+    });
+    throw error;
+  }
 };
 
 /** Send to any room the bot has joined (member follow-up rooms). */
-export const sendMatrixMessageToRoom = async (roomId, body) => {
+export const sendMatrixMessageToRoom = async (roomId, body, meta = {}) => {
   if (!roomId) throw new Error('roomId is required');
-  const client = await getMatrixClient();
-  const eventId = await client.sendText(roomId, body);
-  return { event_id: eventId };
+
+  try {
+    const client = await getMatrixClient();
+
+    // Personal rooms were not in the original crypto warm-up set — refresh
+    // tracked users / Olm sessions for this room right before encrypting.
+    try {
+      const engine = client.crypto?.engine;
+      if (engine) {
+        const { UserId: UId } = await import('@matrix-org/matrix-sdk-crypto-nodejs');
+        const { SYNC_LOCK_NAME: LOCK } = await import('matrix-bot-sdk/lib/e2ee/RustEngine.js');
+        const members = await client.getJoinedRoomMembers(roomId);
+        const uids = members.map((u) => new UId(u));
+        await engine.lock.acquire(LOCK, async () => {
+          await engine.machine.updateTrackedUsers(uids);
+          await engine.run();
+          const claim = await engine.machine.getMissingSessions(uids);
+          if (claim) {
+            await engine.processKeysClaimRequest(claim);
+            await engine.run();
+          }
+        });
+      }
+    } catch (error) {
+      console.warn(`[crypto] Pre-send warm-up for ${roomId}: ${error.message}`);
+    }
+
+    const eventId = await client.sendText(roomId, body);
+    return { event_id: eventId };
+  } catch (error) {
+    await recordBotSendFailure({
+      kind: meta.kind || 'dm_message',
+      roomId,
+      member: meta.member || null,
+      body,
+      error,
+      dateKey: meta.dateKey || null,
+      triggeredBy: meta.triggeredBy || null,
+    });
+    throw error;
+  }
 };
 
 /** Join a room if not already joined — safe to call repeatedly. */
@@ -479,10 +557,21 @@ export const getBotUserId = async () => {
   return client.getUserId();
 };
 
-/** Lightweight status — never starts crypto (avoids lock / hangs). */
-export const verifyMatrixConnection = async () => {
+/** Lightweight status — never starts crypto (avoids lock / hangs). Cached briefly. */
+let matrixStatusCache = { at: 0, value: null };
+const MATRIX_STATUS_TTL_MS = 45_000;
+
+export const verifyMatrixConnection = async ({ force = false } = {}) => {
   if (!isMatrixConfigured()) {
     return { ok: false, message: 'Matrix credentials missing' };
+  }
+
+  if (
+    !force &&
+    matrixStatusCache.value &&
+    Date.now() - matrixStatusCache.at < MATRIX_STATUS_TTL_MS
+  ) {
+    return matrixStatusCache.value;
   }
 
   try {
@@ -526,7 +615,7 @@ export const verifyMatrixConnection = async () => {
       session.via === 'password_login' ||
       (session.via !== 'env_access_token' && Boolean(readSession()));
 
-    return {
+    const value = {
       ok: true,
       userId: whoami.user_id || session.userId,
       deviceId: whoami.device_id || session.deviceId,
@@ -542,11 +631,15 @@ export const verifyMatrixConnection = async () => {
           ? 'Access token is from Element app/web — add MATRIX_USER + MATRIX_PASSWORD for encrypted sends'
           : null,
     };
+    matrixStatusCache = { at: Date.now(), value };
+    return value;
   } catch (error) {
-    return {
+    const value = {
       ok: false,
       message: error.message || 'Matrix connection failed',
     };
+    matrixStatusCache = { at: Date.now(), value };
+    return value;
   }
 };
 

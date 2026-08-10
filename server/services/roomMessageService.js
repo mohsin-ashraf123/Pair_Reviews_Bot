@@ -102,7 +102,10 @@ const toLivePayload = (saved) => ({
 const sendWrongPairAlert = async (mentionedNames, pairs, senderName, senderId, relatedEventId) => {
   try {
     const message = formatWrongPairAlert(mentionedNames, pairs, senderName);
-    const result = await sendMatrixMessage(message);
+    const result = await sendMatrixMessage(message, {
+      kind: 'wrong_pair_alert',
+      triggeredBy: senderName,
+    });
     await logOutgoingMessage(message, result.event_id, 'bot_wrong_pair', {
       alertTriggeredBy: senderName,
       alertTriggeredById: senderId,
@@ -288,13 +291,112 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
   });
   await touchMemberRoom(member, { lastReplyAt: new Date() });
 
+  // Lead report conversation takes priority over legacy member prompts.
+  try {
+    const { handleLeadReply, getActiveLeadSessionForMember } = await import(
+      './leadReportService.js'
+    );
+    const activeLead = await getActiveLeadSessionForMember(member);
+    console.log(
+      `[member-room] ${member} reply "${body.slice(0, 40)}" activeLead=${activeLead?.stage || 'none'} date=${activeLead?.dateKey || '-'}`
+    );
+
+    if (activeLead) {
+      // Stamp the lead-report day on the inbound reply for dashboard history.
+      if (activeLead.dateKey) {
+        await RoomMessage.updateOne(
+          { eventId },
+          { $set: { dateKey: activeLead.dateKey } }
+        );
+      }
+
+      const leadResult = await handleLeadReply(member, roomId, body, eventId);
+      console.log(
+        `[lead-report] ${member} -> status=${leadResult?.status} ack=${Boolean(leadResult?.ack)}`
+      );
+      // Never fall through to old missing-review prompts while a lead report is open.
+      if (!leadResult?.ack) return;
+      try {
+        const sent = await sendMatrixMessageToRoom(roomId, leadResult.ack, {
+          kind: 'lead_report_ack',
+          member,
+          dateKey: activeLead.dateKey,
+        });
+        await logMemberRoomMessage({
+          member,
+          roomId,
+          body: leadResult.ack,
+          eventId: sent.event_id,
+          category: 'bot_dm_ack',
+          dateKey: activeLead.dateKey,
+        });
+      } catch (error) {
+        console.error(`[lead-report] Ack failed for ${member}: ${error.message}`);
+      }
+      return;
+    }
+  } catch (error) {
+    console.error(`[lead-report] Handler error for ${member}:`, error);
+  }
+
+  // 5 PM meeting-discussion check (YES/NO) — after lead report, before legacy prompts.
+  try {
+    const {
+      handleDiscussionReply,
+      getActiveDiscussionPromptForMember,
+    } = await import('./discussionPromptService.js');
+    const discussionPrompt = await getActiveDiscussionPromptForMember(member);
+    if (discussionPrompt) {
+      if (discussionPrompt.reviewDateKey) {
+        await RoomMessage.updateOne(
+          { eventId },
+          { $set: { dateKey: discussionPrompt.reviewDateKey } }
+        );
+      }
+
+      const discussionResult = await handleDiscussionReply(
+        member,
+        roomId,
+        body,
+        eventId
+      );
+      console.log(
+        `[discussion] ${member} -> status=${discussionResult?.status} answer=${discussionResult?.answer || '-'}`
+      );
+      if (!discussionResult?.ack) return;
+      try {
+        const sent = await sendMatrixMessageToRoom(roomId, discussionResult.ack, {
+          kind: 'discussion_ack',
+          member,
+          dateKey: discussionPrompt.reviewDateKey,
+        });
+        await logMemberRoomMessage({
+          member,
+          roomId,
+          body: discussionResult.ack,
+          eventId: sent.event_id,
+          category: 'bot_dm_ack',
+          dateKey: discussionPrompt.reviewDateKey,
+        });
+      } catch (error) {
+        console.error(`[discussion] Ack failed for ${member}: ${error.message}`);
+      }
+      return;
+    }
+  } catch (error) {
+    console.error(`[discussion] Handler error for ${member}:`, error);
+  }
+
   const { handleMemberReply } = await import('./missingReviewPromptService.js');
   const result = await handleMemberReply(member, roomId, body, eventId);
 
   if (!result?.ack) return;
 
   try {
-    const sent = await sendMatrixMessageToRoom(roomId, result.ack);
+    const sent = await sendMatrixMessageToRoom(roomId, result.ack, {
+      kind: 'missing_review_ack',
+      member,
+    });
     await logMemberRoomMessage({
       member,
       roomId,
@@ -342,24 +444,36 @@ export const logOutgoingMessage = async (body, eventId, category = null, meta = 
   return persistAndBroadcastMessage(payload);
 };
 
-/** Messages from the last 24 hours for the live dashboard panel. */
+/** Messages from the last 24 hours for the live dashboard panel (main room only). */
 export const getLiveRoomMessages = (limit = 50) => {
   const since = new Date(Date.now() - LIVE_WINDOW_MS);
-  return RoomMessage.find({ sentAt: { $gte: since } })
-    .sort({ sentAt: 1 })
-    .limit(limit);
+  const personal = Object.values(config.memberRoomMap || {}).filter(Boolean);
+  const query = { sentAt: { $gte: since } };
+  // Exclude personal follow-up rooms — live chat is Main Pair Reviews only.
+  // Using $nin (not exact MATRIX_ROOM_ID) so Matrix room upgrades still show.
+  if (personal.length) {
+    query.roomId = { $nin: personal };
+  } else if (config.matrix.roomId) {
+    query.roomId = config.matrix.roomId;
+  }
+  return RoomMessage.find(query).sort({ sentAt: 1 }).limit(limit);
 };
 
-/** Team review messages older than 24h (archived). */
+/** Team review messages older than 24h (archived) — main Pair Reviews room only. */
 export const getArchivedReviewMessages = (limit = 100) => {
   const before = new Date(Date.now() - LIVE_WINDOW_MS);
-  return RoomMessage.find({
+  const personal = Object.values(config.memberRoomMap || {}).filter(Boolean);
+  const query = {
     direction: 'in',
     category: 'team_review',
     sentAt: { $lt: before },
-  })
-    .sort({ sentAt: -1 })
-    .limit(limit);
+  };
+  if (personal.length) {
+    query.roomId = { $nin: personal };
+  } else if (config.matrix.roomId) {
+    query.roomId = config.matrix.roomId;
+  }
+  return RoomMessage.find(query).sort({ sentAt: -1 }).limit(limit);
 };
 
 /** All bot pairs broadcasts from MessageLog + tagged bot_pairs room messages. */

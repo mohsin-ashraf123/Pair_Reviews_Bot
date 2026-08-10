@@ -59,12 +59,14 @@ const start = async () => {
   try {
     await connectDB();
     await seedMemberRooms();
+    // Join personal rooms before crypto warm-up so device lists are available.
+    await joinMemberRooms().catch((error) =>
+      console.error('Member room join failed:', error.message)
+    );
     startPairScheduler();
-    warmMatrixClient().then(() => {
-      joinMemberRooms().catch((error) =>
-        console.error('Member room join failed:', error.message)
-      );
-    });
+    warmMatrixClient().catch((error) =>
+      console.error('Matrix warm failed:', error.message)
+    );
   } catch (error) {
     console.error('Startup warning:', error.message);
     console.error('Server is up but DB/Matrix may be unavailable — check Railway Variables.');

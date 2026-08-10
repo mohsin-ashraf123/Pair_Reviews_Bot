@@ -24,10 +24,10 @@ import {
 import { savePairRecord, getLastPairRecord, getPairHistory, getPairRecordByDate } from './pairRecordService.js';
 import { claimCronJob, completeCronJob, releaseCronJob } from './cronJobService.js';
 import {
-  sendMissingReviewPrompts,
-  getPromptSummary,
-  summarizePairResponses,
-} from './missingReviewPromptService.js';
+  sendLeadEveningNudge,
+  startLeadMorningReport,
+  getLeadReportSummary,
+} from './leadReportService.js';
 import DailyReview from '../models/DailyReview.js';
 
 export const getTodayPreview = async () => {
@@ -85,7 +85,11 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
   }
 
   try {
-    const result = await sendMatrixMessage(message);
+    const result = await sendMatrixMessage(message, {
+      kind: 'daily_pairs',
+      dateKey,
+      triggeredBy,
+    });
     await logOutgoingMessage(message, result.event_id, 'bot_pairs');
 
     const review = await ensureDailyReview({
@@ -142,7 +146,10 @@ export const getDefaultMonthlyPairs = () => {
 };
 
 /** Weekday 6:50 PM reminder for pairs with pending reviews. */
-export const sendReviewReminder = async (triggeredBy = 'cron') => {
+export const sendReviewReminder = async (
+  triggeredBy = 'cron',
+  { leadOverride = null } = {}
+) => {
   const dateKey = getKarachiDateKey();
 
   if (isWeekend(dateKey)) {
@@ -173,11 +180,24 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
   const message = formatReminderMessage(review.lead, pendingPairs);
 
   try {
-    const result = await sendMatrixMessage(message);
+    const result = await sendMatrixMessage(message, {
+      kind: 'review_reminder',
+      dateKey,
+      triggeredBy,
+    });
     await logOutgoingMessage(message, result.event_id, 'bot_reminder');
 
     review.reminderSentAt = new Date();
     await review.save();
+
+    // Same moment: DM today's lead in their personal room.
+    let leadNudge = null;
+    try {
+      leadNudge = await sendLeadEveningNudge(dateKey, { leadOverride });
+    } catch (nudgeError) {
+      console.error(`[lead-nudge] Failed for ${dateKey}: ${nudgeError.message}`);
+      leadNudge = { skipped: true, reason: nudgeError.message };
+    }
 
     if (triggeredBy === 'cron') {
       await completeCronJob(jobKey, result.event_id);
@@ -188,6 +208,7 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
       message,
       pendingPairs,
       reviewedMembers: review.reviewedMembers,
+      leadNudge,
     };
   } catch (error) {
     if (triggeredBy === 'cron') {
@@ -198,16 +219,16 @@ export const sendReviewReminder = async (triggeredBy = 'cron') => {
 };
 
 /**
- * Weekday 10:50 AM — DM each member of yesterday's pairs that missed review,
- * asking why. Their reply drives attendance and the 11:20 AM room notice.
+ * Weekday 10:50 AM — DM yesterday's lead only and collect the team report
+ * (submitted reviews verify + reasons for missing pairs).
  */
 export const sendMissingReviewFollowUps = async (
   triggeredBy = 'cron',
-  { onlyMember = null } = {}
+  { leadOverride = null, force = false } = {}
 ) => {
   const todayKey = getKarachiDateKey();
 
-  if (isWeekend(todayKey)) {
+  if (isWeekend(todayKey) && triggeredBy === 'cron') {
     return { skipped: true, reason: 'Weekend — no follow-ups' };
   }
 
@@ -228,7 +249,10 @@ export const sendMissingReviewFollowUps = async (
   }
 
   try {
-    const result = await sendMissingReviewPrompts(yesterdayKey, { onlyMember });
+    const result = await startLeadMorningReport(yesterdayKey, {
+      leadOverride,
+      force,
+    });
 
     if (triggeredBy === 'cron') {
       if (result.skipped) {
@@ -247,7 +271,8 @@ export const sendMissingReviewFollowUps = async (
   }
 };
 
-/** Weekday 11:20 AM — notify the main room about yesterday's missed reviews. */
+/** Weekday 11:20 AM — notify the main room about yesterday's missed reviews
+ *  and any reviews marked "not discussed" from yesterday's 5 PM check. */
 export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const todayKey = getKarachiDateKey();
 
@@ -255,8 +280,8 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     return { skipped: true, reason: 'Weekend — no notice' };
   }
 
-  // Never post the room summary in the same window as the personal DMs —
-  // members need time to reply. Stale Railway env used to fire both at 10:50.
+  // Never post the room summary before the lead morning report —
+  // the lead needs time to reply. Stale Railway env used to fire both at 10:50.
   if (
     triggeredBy === 'cron' &&
     !isPastCronTimeToday(config.missedReviewCronSchedule, 11, 20)
@@ -270,20 +295,31 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const yesterdayKey = getPreviousWorkingDay(todayKey);
   const review = await DailyReview.findOne({ dateKey: yesterdayKey });
 
-  if (!review?.pairsSentAt) {
-    return { skipped: true, reason: 'No pairs sent yesterday' };
+  const { getUndiscussedPairsForMeeting } = await import(
+    './discussionPromptService.js'
+  );
+  const undiscussedPairs = await getUndiscussedPairsForMeeting(yesterdayKey);
+
+  const pendingPairs = review?.pairsSentAt
+    ? getPendingPairs(review.pairs, review.reviewedMembers)
+    : [];
+
+  if (!pendingPairs.length && !undiscussedPairs.length) {
+    return {
+      skipped: true,
+      reason: 'Nothing to report — no missing reviews and nothing left undiscussed',
+    };
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
-  if (pendingPairs.length === 0) {
-    return { skipped: true, reason: 'All yesterday reviews completed' };
-  }
-
-  if (triggeredBy === 'cron' && !review.missingReviewPromptsSentAt) {
+  if (pendingPairs.length && triggeredBy === 'cron' && !review?.missingReviewPromptsSentAt) {
     return {
       skipped: true,
       reason: 'Personal follow-ups not sent yet — room notice waits for replies',
     };
+  }
+
+  if (pendingPairs.length && !review?.pairsSentAt) {
+    return { skipped: true, reason: 'No pairs sent yesterday' };
   }
 
   const jobKey = `missed_review:${todayKey}:for:${yesterdayKey}`;
@@ -293,25 +329,35 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
     if (!claimed) {
       return { skipped: true, reason: 'Missed review notice already sent' };
     }
-  } else if (review.missedReviewNoticeSentAt) {
+  } else if (review?.missedReviewNoticeSentAt) {
     return { skipped: true, reason: 'Missed review notice already sent' };
   }
 
-  const { byPair } = await getPromptSummary(yesterdayKey);
-  const responseByPair = new Map();
-  for (const [key, entry] of byPair) {
-    const summary = summarizePairResponses(entry);
-    if (summary) responseByPair.set(key, summary);
+  const { session, responseByPair } = await getLeadReportSummary(yesterdayKey);
+  const message = formatMissedReviewMessage(
+    yesterdayKey,
+    pendingPairs,
+    responseByPair,
+    undiscussedPairs
+  );
+
+  if (!message.trim()) {
+    if (triggeredBy === 'cron') await releaseCronJob(jobKey);
+    return { skipped: true, reason: 'Empty notice — nothing to send' };
   }
 
-  const message = formatMissedReviewMessage(yesterdayKey, pendingPairs, responseByPair);
-
   try {
-    const result = await sendMatrixMessage(message);
+    const result = await sendMatrixMessage(message, {
+      kind: 'missed_review',
+      dateKey: yesterdayKey,
+      triggeredBy,
+    });
     await logOutgoingMessage(message, result.event_id, 'bot_missed');
 
-    review.missedReviewNoticeSentAt = new Date();
-    await review.save();
+    if (review) {
+      review.missedReviewNoticeSentAt = new Date();
+      await review.save();
+    }
 
     if (triggeredBy === 'cron') {
       await completeCronJob(jobKey, result.event_id);
@@ -321,8 +367,54 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
       skipped: false,
       message,
       pendingPairs,
+      undiscussedPairs,
       forDate: yesterdayKey,
+      leadReportStage: session?.stage || null,
     };
+  } catch (error) {
+    if (triggeredBy === 'cron') {
+      await releaseCronJob(jobKey);
+    }
+    throw error;
+  }
+};
+
+/** Weekday 5:00 PM — ask one member per pair if yesterday's review was discussed. */
+export const sendDiscussionFollowUps = async (
+  triggeredBy = 'cron',
+  { force = false } = {}
+) => {
+  const todayKey = getKarachiDateKey();
+
+  if (isWeekend(todayKey) && triggeredBy === 'cron') {
+    return { skipped: true, reason: 'Weekend — no discussion prompts' };
+  }
+
+  const jobKey = `discussion_prompts:${todayKey}`;
+
+  if (triggeredBy === 'cron') {
+    const claimed = await claimCronJob(jobKey, {
+      jobType: 'discussion_prompts',
+      dateKey: todayKey,
+    });
+    if (!claimed) {
+      return { skipped: true, reason: 'Discussion prompts already sent today' };
+    }
+  }
+
+  try {
+    const { sendDiscussionPrompts } = await import('./discussionPromptService.js');
+    const result = await sendDiscussionPrompts(todayKey, { force });
+
+    if (triggeredBy === 'cron') {
+      if (result.skipped || !(result.prompts || []).length) {
+        await releaseCronJob(jobKey);
+      } else {
+        await completeCronJob(jobKey, null);
+      }
+    }
+
+    return result;
   } catch (error) {
     if (triggeredBy === 'cron') {
       await releaseCronJob(jobKey);

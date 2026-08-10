@@ -310,7 +310,11 @@ export const sendMissingReviewPrompts = async (dateKey, { onlyMember = null } = 
       const message = formatPromptMessage(member, pair, dateKey, options);
 
       try {
-        const result = await sendMatrixMessageToRoom(roomId, message);
+        const result = await sendMatrixMessageToRoom(roomId, message, {
+          kind: 'missing_review_dm',
+          member,
+          dateKey,
+        });
 
         const saved = await MissingReviewPrompt.findOneAndUpdate(
           { dateKey, member },

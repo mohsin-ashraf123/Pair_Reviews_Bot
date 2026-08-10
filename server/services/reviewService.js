@@ -1,10 +1,25 @@
 import DailyReview from '../models/DailyReview.js';
 import DailyPairRecord from '../models/DailyPairRecord.js';
 import RoomMessage from '../models/RoomMessage.js';
-import { getAllMembers } from '../config/appConfig.js';
+import { config, getAllMembers } from '../config/appConfig.js';
 import { getKarachiDateKey, formatDisplayDate } from './pairService.js';
 import { isTeamMember } from './memberService.js';
+import { isMemberRoom } from './memberRoomService.js';
 import { emitReviewUpdate } from './socketService.js';
+
+/** Personal follow-up rooms — never count these for review attendance / live main chat. */
+const personalRoomIds = () =>
+  Object.values(config.memberRoomMap || {}).filter(Boolean);
+
+/** Main Pair Reviews activity = anything that is not a personal member room. */
+const mainRoomMessageFilter = () => {
+  const personal = personalRoomIds();
+  if (!personal.length) {
+    const roomId = (config.matrix.roomId || '').trim();
+    return roomId ? { roomId } : {};
+  }
+  return { roomId: { $nin: personal } };
+};
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -94,10 +109,31 @@ export const recomputeReviewedMembers = async (dateKey) => {
   const review = await DailyReview.findOne({ dateKey });
   if (!review?.pairsSentAt) return null;
 
+  const personal = personalRoomIds();
+
+  // Personal follow-up rooms are for info only — never mark attendance from them.
+  if (personal.length) {
+    await RoomMessage.updateMany(
+      {
+        dateKey,
+        countsAsReview: true,
+        roomId: { $in: personal },
+      },
+      {
+        $unset: {
+          countsAsReview: 1,
+          matchedPair: 1,
+          pairKey: 1,
+        },
+      }
+    );
+  }
+
   const activeReviews = await RoomMessage.find({
     dateKey,
     countsAsReview: true,
     deletedAt: { $exists: false },
+    ...mainRoomMessageFilter(),
   });
 
   const reviewed = new Set();
@@ -135,25 +171,53 @@ export const formatReminderMessage = (lead, pendingPairs) => {
 
 /**
  * `responseByPair` maps a sorted pair key to the follow-up answer collected
- * from the members' personal rooms, e.g. "Farhan absent".
+ * from the lead report, e.g. "Farhan absent".
+ * `undiscussedPairs` is an optional list of pairs whose review was not
+ * discussed in yesterday's meeting (from the 5 PM check).
  */
 export const formatMissedReviewMessage = (
   dateKey,
   pendingPairs,
-  responseByPair = new Map()
+  responseByPair = new Map(),
+  undiscussedPairs = []
 ) => {
   const displayDate = formatDisplayDate(dateKey);
-  const lines = pendingPairs.map((pair) => {
-    const label = pair.join(' + ');
-    const reason = responseByPair.get(buildPairKey(pair)) || 'no response yet';
-    return `${label} (${reason})`;
-  });
+  const sections = [];
 
-  return [
-    `Yesterday (${displayDate}) the following pairs did not submit their review:`,
-    '',
-    ...lines,
-  ].join('\n');
+  if (pendingPairs.length) {
+    const lines = pendingPairs.map((pair) => {
+      const label = pair.join(' + ');
+      const reason = responseByPair.get(buildPairKey(pair)) || 'no response yet';
+      return `${label} (${reason})`;
+    });
+
+    sections.push(
+      [
+        `Yesterday (${displayDate}) the following pairs did not submit their review:`,
+        '',
+        ...lines,
+      ].join('\n')
+    );
+  }
+
+  if (undiscussedPairs.length) {
+    const lines = undiscussedPairs.map((entry) => {
+      const label = (entry.pair || []).join(' + ');
+      return `${label} (not discussed in the meeting)`;
+    });
+
+    sections.push(
+      [
+        pendingPairs.length
+          ? 'Also not discussed in yesterday’s meeting:'
+          : `Yesterday’s meeting — these reviews were not discussed:`,
+        '',
+        ...lines,
+      ].join('\n')
+    );
+  }
+
+  return sections.join('\n\n');
 };
 
 export const ensureDailyReview = async ({ dateKey, lead, pairs, pairsSentAt }) => {
@@ -229,12 +293,22 @@ export const recordReviewFromMessage = async (
   const pairKey = buildPairKey(matchedPair);
 
   if (eventId) {
+    const msg = await RoomMessage.findOne({ eventId });
+    // Attendance only from Main Pair Reviews room — never personal DMs.
+    if (msg?.roomId && isMemberRoom(msg.roomId)) {
+      console.log(
+        `[review] Ignored personal-room message as review (${msg.roomId})`
+      );
+      return { status: 'ignored' };
+    }
+
     const duplicate = await RoomMessage.findOne({
       dateKey,
       pairKey,
       countsAsReview: true,
       deletedAt: { $exists: false },
       eventId: { $ne: eventId },
+      ...mainRoomMessageFilter(),
     });
 
     if (duplicate) {
@@ -319,5 +393,7 @@ export const getTodayReviewState = async () => {
     }
   }
 
+  // Attendance is updated when main-room reviews arrive/delete — no full
+  // recompute on every dashboard poll (that was adding multi-second lag).
   return buildReviewState(review);
 };

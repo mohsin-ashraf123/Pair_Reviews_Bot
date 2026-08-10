@@ -5,6 +5,7 @@ import {
   sendReviewReminder,
   sendMissedReviewNotice,
   sendMissingReviewFollowUps,
+  sendDiscussionFollowUps,
 } from './pairBotService.js';
 import { getNextDailySendTarget, getAllScheduleCountdowns } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
@@ -13,6 +14,7 @@ let pairsTask = null;
 let reminderTask = null;
 let missedReviewTask = null;
 let promptTask = null;
+let discussionTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
@@ -20,6 +22,7 @@ const cronInFlight = {
   reminder: false,
   missed: false,
   prompts: false,
+  discussion: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -46,6 +49,12 @@ const broadcastCountdown = () => {
 };
 
 export const startPairScheduler = () => {
+  // Dashboard countdown must tick even when cron jobs are disabled locally.
+  if (!countdownInterval) {
+    broadcastCountdown();
+    countdownInterval = setInterval(broadcastCountdown, 1000);
+  }
+
   if (!config.enableCronScheduler) {
     console.log('[cron] Scheduler disabled — set ENABLE_CRON_SCHEDULER=true to run crons on this instance');
     return null;
@@ -155,9 +164,30 @@ export const startPairScheduler = () => {
     );
   }
 
-  if (!countdownInterval) {
-    broadcastCountdown();
-    countdownInterval = setInterval(broadcastCountdown, 1000);
+  if (cron.validate(config.discussionCronSchedule) && !discussionTask) {
+    discussionTask = cron.schedule(
+      config.discussionCronSchedule,
+      () =>
+        runCronJob('discussion', async () => {
+          try {
+            const result = await sendDiscussionFollowUps('cron');
+            if (result.skipped) {
+              console.log(`[cron] Discussion prompts skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Discussion prompts sent for ${result.reviewDateKey} ` +
+                  `(${(result.prompts || []).length} pairs)`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Failed to send discussion prompts:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Discussion prompt scheduler active: "${config.discussionCronSchedule}" (${config.timezone})`
+    );
   }
 
   return pairsTask;

@@ -1,30 +1,30 @@
 :root {
-  --bg: #f2f2f7;
-  --surface: #ffffff;
-  --surface-elevated: #ffffff;
-  --border: rgba(60, 60, 67, 0.12);
-  --border-strong: rgba(60, 60, 67, 0.2);
-  --text: #1c1c1e;
-  --text-muted: #8e8e93;
-  --text-secondary: #636366;
-  --primary: #007aff;
-  --primary-hover: #0066d6;
-  --primary-soft: rgba(0, 122, 255, 0.1);
-  --success: #34c759;
-  --success-soft: rgba(52, 199, 89, 0.12);
-  --warning: #ff9500;
-  --warning-soft: rgba(255, 149, 0, 0.12);
-  --danger: #ff3b30;
-  --danger-soft: rgba(255, 59, 48, 0.12);
-  --sidebar-width: 220px;
-  --header-height: 56px;
-  --mobile-tab-bar: 84px;
-  --radius: 12px;
-  --radius-sm: 10px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.08);
+  --bg: #e8e7e3;
+  --surface: #f7f6f3;
+  --surface-elevated: #fffcf8;
+  --border: #d2d0c8;
+  --border-strong: #b8b5ab;
+  --text: #1c1b19;
+  --text-muted: #6f6c64;
+  --text-secondary: #3f3d38;
+  --primary: #1f3d36;
+  --primary-hover: #16302a;
+  --primary-soft: #e2ebe7;
+  --success: #2f6b45;
+  --success-soft: #e5f0e8;
+  --warning: #9a6b12;
+  --warning-soft: #f5ecda;
+  --danger: #9b3a32;
+  --danger-soft: #f6e8e6;
+  --sidebar-width: 228px;
+  --header-height: 64px;
+  --mobile-tab-bar: 72px;
+  --radius: 0;
+  --radius-sm: 0;
+  --radius-lg: 0;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
 }
 
 * {
@@ -37,9 +37,9 @@ html {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-  font-size: 15px;
-  line-height: 1.47;
+  font-family: 'Segoe UI', 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -69,4 +69,42 @@ a {
 ::selection {
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+/* Modern thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 24, 31, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(20, 24, 31, 0.22);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(31, 61, 54, 0.55);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: rgba(31, 61, 54, 0.75);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }

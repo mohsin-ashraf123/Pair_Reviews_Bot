@@ -8,9 +8,9 @@ function DashboardLayout() {
   return (
     <BotStatusProvider>
       <div className="dashboard">
-        <Header />
-        <div className="dashboard-body">
-          <Sidebar />
+        <Sidebar />
+        <div className="dashboard-main">
+          <Header />
           <main className="main-content">
             <Outlet />
           </main>

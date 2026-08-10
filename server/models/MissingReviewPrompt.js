@@ -46,7 +46,7 @@ const missingReviewPromptSchema = new mongoose.Schema(
     options: [optionSchema],
     status: {
       type: String,
-      enum: ['pending', 'answered', 'failed'],
+      enum: ['pending', 'answered', 'failed', 'cancelled'],
       default: 'pending',
     },
     sendError: String,

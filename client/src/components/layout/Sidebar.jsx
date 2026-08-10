@@ -7,18 +7,20 @@ const navItems = [
   { label: 'History', short: 'History', to: '/dashboard/history', icon: 'history' },
   { label: 'Performance', short: 'Stats', to: '/dashboard/performance', icon: 'stats' },
   { label: 'Member Rooms', short: 'Rooms', to: '/dashboard/members', icon: 'rooms' },
+  { label: 'Lead Reports', short: 'Leads', to: '/dashboard/leads', icon: 'leads' },
+  { label: 'AI Analyzed', short: 'AI', to: '/dashboard/ai', icon: 'ai' },
   { label: 'Settings', short: 'Settings', to: '/dashboard/settings', icon: 'settings' },
 ];
 
-function TabIcon({ name, active }) {
-  const stroke = active ? 'var(--primary)' : '#8e8e93';
+function NavIcon({ name, active, size = 18 }) {
+  const stroke = active ? 'var(--primary)' : 'currentColor';
   const props = {
-    width: 24,
-    height: 24,
+    width: size,
+    height: size,
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke,
-    strokeWidth: active ? 2.2 : 1.8,
+    strokeWidth: active ? 2.1 : 1.7,
     strokeLinecap: 'round',
     strokeLinejoin: 'round',
     'aria-hidden': true,
@@ -63,6 +65,27 @@ function TabIcon({ name, active }) {
           <path d="M8.5 10h7" />
         </svg>
       );
+    case 'leads':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="8" r="3" />
+          <path d="M5 19c0-3.3 3-5 7-5s7 1.7 7 5" />
+        </svg>
+      );
+    case 'ai':
+      return (
+        <svg {...props}>
+          <path d="M12 3v3" />
+          <path d="M12 18v3" />
+          <path d="M3 12h3" />
+          <path d="M18 12h3" />
+          <path d="M6.2 6.2l2.1 2.1" />
+          <path d="M15.7 15.7l2.1 2.1" />
+          <path d="M6.2 17.8l2.1-2.1" />
+          <path d="M15.7 8.3l2.1-2.1" />
+          <circle cx="12" cy="12" r="3.2" />
+        </svg>
+      );
     case 'settings':
       return (
         <svg {...props}>
@@ -88,9 +111,16 @@ function Sidebar() {
     <>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="sidebar-brand-dot" />
-          <span className="sidebar-brand-text">Menu</span>
+          <div className="sidebar-brand-mark" aria-hidden>
+            EP
+          </div>
+          <div className="sidebar-brand-copy">
+            <span className="sidebar-brand-title">Pair Review</span>
+            <span className="sidebar-brand-sub">Workspace</span>
+          </div>
         </div>
+
+        <p className="sidebar-section-label">Navigate</p>
 
         <nav className="sidebar-nav">
           {navItems.map((item) => (
@@ -102,19 +132,34 @@ function Sidebar() {
                 `sidebar-link${isActive ? ' active' : ''}`
               }
             >
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  <span className="sidebar-link-icon">
+                    <NavIcon name={item.icon} active={isActive} />
+                  </span>
+                  <span className="sidebar-link-label">{item.label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
 
         <div className="sidebar-footer">
-          <span className="sidebar-user">{user}</span>
+          <div className="sidebar-user-block">
+            <span className="sidebar-user-avatar" aria-hidden>
+              {(user || 'A').slice(0, 1).toUpperCase()}
+            </span>
+            <div className="sidebar-user-meta">
+              <span className="sidebar-user">{user || 'Admin'}</span>
+              <span className="sidebar-user-role">Operator</span>
+            </div>
+          </div>
           <button
             type="button"
             className="logout-btn sidebar-logout"
             onClick={handleLogout}
           >
-            Logout
+            Sign out
           </button>
         </div>
       </aside>
@@ -132,7 +177,7 @@ function Sidebar() {
             {({ isActive }) => (
               <>
                 <span className="mobile-tab-icon">
-                  <TabIcon name={item.icon} active={isActive} />
+                  <NavIcon name={item.icon} active={isActive} size={22} />
                 </span>
                 <span className="mobile-tab-label">{item.short}</span>
               </>

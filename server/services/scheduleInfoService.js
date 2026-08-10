@@ -15,35 +15,188 @@ import {
   buildPairKey,
 } from './reviewService.js';
 import {
-  buildPromptOptions,
-  formatPromptMessage,
-  getPromptSummary,
-  summarizePairResponses,
-} from './missingReviewPromptService.js';
+  formatLeadEveningNudge,
+  formatLeadReportKickoff,
+  formatPairChoiceQuestion,
+  formatSinglePairVerifyQuestion,
+  buildLeadPairOptions,
+  getLeadReportSummary,
+} from './leadReportService.js';
+import {
+  previewDiscussionPrompts,
+  getUndiscussedPairsForMeeting,
+} from './discussionPromptService.js';
 
-export const getScheduledMessagesInfo = async () => {
+const pairLabel = (pair = []) => pair.join(' + ');
+
+const getSubmittedPairs = (pairs = [], reviewedMembers = []) => {
+  const reviewed = new Set(reviewedMembers);
+  return pairs.filter((pair) => pair.every((name) => reviewed.has(name)));
+};
+
+let scheduleInfoCache = { at: 0, value: null, inflight: null };
+const SCHEDULE_INFO_TTL_MS = 20_000;
+
+/**
+ * Live previews for every scheduled bot action — real recipients + real message
+ * bodies in send order (not placeholder examples).
+ */
+export const getScheduledMessagesInfo = async ({ force = false } = {}) => {
+  if (
+    !force &&
+    scheduleInfoCache.value &&
+    Date.now() - scheduleInfoCache.at < SCHEDULE_INFO_TTL_MS
+  ) {
+    return scheduleInfoCache.value;
+  }
+
+  if (!force && scheduleInfoCache.inflight) {
+    return scheduleInfoCache.inflight;
+  }
+
+  const build = buildScheduledMessagesInfo();
+  scheduleInfoCache.inflight = build;
+  try {
+    const value = await build;
+    scheduleInfoCache = { at: Date.now(), value, inflight: null };
+    return value;
+  } catch (error) {
+    scheduleInfoCache.inflight = null;
+    throw error;
+  }
+};
+
+const buildScheduledMessagesInfo = async () => {
+  const todayKey = getKarachiDateKey();
+  const yesterdayKey = getPreviousWorkingDay(todayKey);
   const pairsData = buildDailyPairs();
   const dailyPairsMessage = formatDailyMessage(pairsData);
 
-  const sampleLead = pairsData.lead;
-  const samplePending = pairsData.allPairs.slice(0, 2);
-  const reminderMessage = formatReminderMessage(sampleLead, samplePending);
+  const [todayReview, yesterdayReview, leadSummary, undiscussedPairs, discussionPreview] =
+    await Promise.all([
+      DailyReview.findOne({ dateKey: todayKey }).lean(),
+      DailyReview.findOne({ dateKey: yesterdayKey }).lean(),
+      getLeadReportSummary(yesterdayKey),
+      getUndiscussedPairsForMeeting(yesterdayKey),
+      previewDiscussionPrompts(todayKey),
+    ]);
 
-  const todayKey = getKarachiDateKey();
-  const yesterdayKey = getPreviousWorkingDay(todayKey);
-  const yesterdayReview = await DailyReview.findOne({ dateKey: yesterdayKey });
+  const { responseByPair } = leadSummary;
 
-  let missedReviewMessage;
-  let missedReviewNote;
-  let promptMessage;
-  let promptNote;
+  // --- 10:50 Lead team report (yesterday’s lead only) ---
+  const leadFollowUps = {
+    id: 'missing_review_prompts',
+    time: cronTimeLabel(config.missingReviewPromptCronSchedule, 10, 50),
+    days: 'Mon–Fri',
+    cron: config.missingReviewPromptCronSchedule,
+    title: 'Lead team report',
+    destination: 'Yesterday’s lead — personal room only',
+    destinationKind: 'personal',
+    description:
+      'Private conversation with yesterday’s lead: ready check → verify each submitted review → reason for each missing pair.',
+    exampleForDate: formatDisplayDate(yesterdayKey),
+    recipients: [],
+    messages: [],
+    exampleNote: null,
+    example: '',
+  };
 
-  const { byPair } = await getPromptSummary(yesterdayKey);
-  const responseByPair = new Map();
-  for (const [key, entry] of byPair) {
-    const summary = summarizePairResponses(entry);
-    if (summary) responseByPair.set(key, summary);
+  if (yesterdayReview?.pairsSentAt) {
+    const lead = yesterdayReview.lead;
+    const pending = getPendingPairs(
+      yesterdayReview.pairs,
+      yesterdayReview.reviewedMembers
+    );
+    const submitted = getSubmittedPairs(
+      yesterdayReview.pairs,
+      yesterdayReview.reviewedMembers
+    );
+
+    leadFollowUps.recipients = [
+      {
+        name: lead,
+        role: 'Yesterday’s lead',
+        via: 'Personal room',
+      },
+    ];
+
+    leadFollowUps.messages.push({
+      label: '1 · Kickoff (first message)',
+      to: lead,
+      body: formatLeadReportKickoff(lead, yesterdayKey),
+    });
+
+    const verifyBodies = await Promise.all(
+      submitted.map((pair, i) =>
+        formatSinglePairVerifyQuestion(yesterdayKey, pair, i, submitted.length)
+      )
+    );
+    verifyBodies.forEach((body, i) => {
+      leadFollowUps.messages.push({
+        label: `2 · Verify submitted ${i + 1}/${submitted.length}`,
+        to: lead,
+        body,
+      });
+    });
+
+    for (let i = 0; i < pending.length; i += 1) {
+      const pair = pending[i];
+      leadFollowUps.messages.push({
+        label: `3 · Missing pair ${i + 1}/${pending.length}`,
+        to: lead,
+        body: formatPairChoiceQuestion(
+          pair,
+          buildLeadPairOptions(pair),
+          i,
+          pending.length
+        ),
+      });
+    }
+
+    leadFollowUps.exampleNote =
+      pending.length || submitted.length
+        ? `Live for ${formatDisplayDate(yesterdayKey)} — lead ${lead}: ${submitted.length} to verify, ${pending.length} missing.`
+        : `Live for ${formatDisplayDate(yesterdayKey)} — all reviews were in; morning lead report is usually skipped.`;
+
+    if (!pending.length && !submitted.length) {
+      leadFollowUps.messages = [
+        {
+          label: 'Status',
+          to: '—',
+          body: `No lead report needed for ${formatDisplayDate(yesterdayKey)} — nothing to verify or collect.`,
+        },
+      ];
+    }
+  } else {
+    leadFollowUps.exampleNote = `No pair send recorded for ${formatDisplayDate(yesterdayKey)} — this job would skip.`;
+    leadFollowUps.messages = [
+      {
+        label: 'Status',
+        to: '—',
+        body: `Skipped — pairs were not sent on ${formatDisplayDate(yesterdayKey)}.`,
+      },
+    ];
   }
+
+  leadFollowUps.example = leadFollowUps.messages.map((m) => m.body).join('\n\n———\n\n');
+
+  // --- 11:20 Missed / not-discussed notice (main room) ---
+  const missedNotice = {
+    id: 'missed_review',
+    time: cronTimeLabel(config.missedReviewCronSchedule, 11, 20),
+    days: 'Mon–Fri',
+    cron: config.missedReviewCronSchedule,
+    title: 'Missed review notice',
+    destination: 'Main Pair Reviews room',
+    destinationKind: 'main',
+    description:
+      'Posts yesterday’s missing pairs (with lead reasons) and any reviews marked not discussed in the meeting.',
+    exampleForDate: formatDisplayDate(yesterdayKey),
+    recipients: [{ name: 'Main Pair Reviews', role: 'Room', via: 'Main room' }],
+    messages: [],
+    exampleNote: null,
+    example: '',
+  };
 
   if (yesterdayReview?.pairsSentAt) {
     const actualPending = getPendingPairs(
@@ -51,123 +204,171 @@ export const getScheduledMessagesInfo = async () => {
       yesterdayReview.reviewedMembers
     );
 
-    if (actualPending.length) {
-      missedReviewMessage = formatMissedReviewMessage(
+    if (actualPending.length || undiscussedPairs.length) {
+      const body = formatMissedReviewMessage(
         yesterdayKey,
         actualPending,
-        responseByPair
+        responseByPair,
+        undiscussedPairs
       );
+      missedNotice.messages.push({
+        label: '1 · Main room notice',
+        to: 'Main Pair Reviews',
+        body,
+      });
       const answered = actualPending.filter((pair) =>
         responseByPair.has(buildPairKey(pair))
       ).length;
-      missedReviewNote = `Live preview — ${actualPending.length} pair(s) missing review, ${answered} answered in their personal room.`;
-
-      const [samplePair] = actualPending;
-      const sampleMember = samplePair[0];
-      const options = buildPromptOptions(sampleMember, samplePair, yesterdayKey);
-      promptMessage = formatPromptMessage(
-        sampleMember,
-        samplePair,
-        yesterdayKey,
-        options
-      );
-      promptNote = `Live preview — each member of ${actualPending.length} pair(s) gets this in their own room.`;
+      missedNotice.exampleNote = `Live — ${actualPending.length} missing (${answered} with lead reason), ${undiscussedPairs.length} not discussed.`;
     } else {
-      missedReviewMessage =
-        `Yesterday (${formatDisplayDate(yesterdayKey)}) — all pairs submitted their review.\n\n` +
-        'No missed review notice would be sent today.';
-      missedReviewNote = 'All yesterday reviews are complete — cron skips this message.';
+      missedNotice.exampleNote = 'Nothing pending — this notice would not be sent.';
+      missedNotice.messages.push({
+        label: 'Status',
+        to: '—',
+        body: `Yesterday (${formatDisplayDate(yesterdayKey)}) — all pairs submitted and none were marked “not discussed”. No 11:20 notice.`,
+      });
     }
   } else {
-    missedReviewMessage = formatMissedReviewMessage(yesterdayKey, [
-      ['Pair Member A', 'Pair Member B'],
-    ]);
-    missedReviewNote =
-      'Example only — only pairs that did not submit review yesterday are listed.';
+    missedNotice.exampleNote = `No pair send for ${formatDisplayDate(yesterdayKey)} — skipped.`;
+    missedNotice.messages.push({
+      label: 'Status',
+      to: '—',
+      body: `Skipped — no daily pairs record for ${formatDisplayDate(yesterdayKey)}.`,
+    });
   }
 
-  if (!promptMessage) {
-    const examplePair = pairsData.developerPairs[0] || ['Member A', 'Member B'];
-    const exampleMember = examplePair[0];
-    const options = buildPromptOptions(exampleMember, examplePair, yesterdayKey);
-    promptMessage = formatPromptMessage(
-      exampleMember,
-      examplePair,
-      yesterdayKey,
-      options
+  missedNotice.example = missedNotice.messages.map((m) => m.body).join('\n\n———\n\n');
+
+  // --- 11:30 Daily pairs (main room) ---
+  const dailyPairs = {
+    id: 'daily_pairs',
+    time: cronTimeLabel(config.cronSchedule, 11, 30),
+    days: 'Mon–Fri',
+    cron: config.cronSchedule,
+    title: 'Today’s pairs',
+    destination: 'Main Pair Reviews room',
+    destinationKind: 'main',
+    description: 'Posts today’s pair assignments and lead to the main Element room.',
+    exampleForDate: formatDisplayDate(todayKey),
+    recipients: [{ name: 'Main Pair Reviews', role: 'Room', via: 'Main room' }],
+    messages: [
+      {
+        label: '1 · Pairs broadcast',
+        to: 'Main Pair Reviews',
+        body: dailyPairsMessage,
+      },
+    ],
+    exampleNote: `Live for ${formatDisplayDate(todayKey)} — lead ${pairsData.lead}.`,
+    example: dailyPairsMessage,
+  };
+
+  // --- 5:00 Discussion check (one member per eligible pair) ---
+  const discussion = {
+    id: 'discussion_prompts',
+    time: cronTimeLabel(config.discussionCronSchedule, 17, 0),
+    days: 'Mon–Fri',
+    cron: config.discussionCronSchedule,
+    title: 'Meeting discussion check',
+    destination: 'One member per pair — personal room',
+    destinationKind: 'personal',
+    description:
+      'Asks one rotating member per submitted pair (with real findings) if yesterday’s review was discussed today. Skips missing and “no issues” reviews.',
+    exampleForDate: formatDisplayDate(discussionPreview.reviewDateKey),
+    recipients: discussionPreview.prompts.map((p) => ({
+      name: p.member,
+      role: `Pair: ${pairLabel(p.pair)}`,
+      via: 'Personal room',
+    })),
+    messages: discussionPreview.prompts.map((p, i) => ({
+      label: `${i + 1} · DM to ${p.member}`,
+      to: p.member,
+      body: p.message,
+    })),
+    exampleNote: discussionPreview.note,
+    example: '',
+    skipped: (discussionPreview.skippedPairs || []).map((s) => ({
+      pair: pairLabel(s.pair),
+      reason: s.reason,
+    })),
+  };
+
+  if (!discussion.messages.length) {
+    discussion.messages = [
+      {
+        label: 'Status',
+        to: '—',
+        body: discussionPreview.note || 'No discussion DMs would be sent.',
+      },
+    ];
+  }
+
+  discussion.example = discussion.messages.map((m) => m.body).join('\n\n———\n\n');
+
+  // --- 6:50 Reminder + lead nudge ---
+  const reminder = {
+    id: 'review_reminder',
+    time: cronTimeLabel(config.reminderCronSchedule, 18, 50),
+    days: 'Mon–Fri',
+    cron: config.reminderCronSchedule,
+    title: 'Review reminder',
+    destination: 'Main room + today’s lead personal room',
+    destinationKind: 'main',
+    description:
+      'Main-room reminder for pairs still pending today, plus a private nudge to today’s lead.',
+    exampleForDate: formatDisplayDate(todayKey),
+    recipients: [],
+    messages: [],
+    exampleNote: null,
+    example: '',
+  };
+
+  if (todayReview?.pairsSentAt) {
+    const pendingToday = getPendingPairs(
+      todayReview.pairs,
+      todayReview.reviewedMembers
     );
-    promptNote =
-      promptNote ||
-      'Example only — sent privately to every member whose pair review was missing.';
+    const lead = todayReview.lead;
+
+    reminder.recipients = [
+      { name: 'Main Pair Reviews', role: 'Room', via: 'Main room' },
+      { name: lead, role: 'Today’s lead', via: 'Personal room' },
+    ];
+
+    if (pendingToday.length) {
+      reminder.messages.push({
+        label: '1 · Main room reminder',
+        to: 'Main Pair Reviews',
+        body: formatReminderMessage(lead, pendingToday),
+      });
+      reminder.messages.push({
+        label: '2 · Lead personal DM',
+        to: lead,
+        body: formatLeadEveningNudge(lead, todayKey, pendingToday),
+      });
+      reminder.exampleNote = `Live — ${pendingToday.length} pending pair(s); lead ${lead}.`;
+    } else {
+      reminder.exampleNote = 'All reviews in — reminder would be skipped.';
+      reminder.messages.push({
+        label: 'Status',
+        to: '—',
+        body: `No 6:50 reminder — every pair has submitted for ${formatDisplayDate(todayKey)}.`,
+      });
+      reminder.recipients = [];
+    }
+  } else {
+    reminder.exampleNote =
+      'Today’s pairs have not been sent yet — reminder activates after the 11:30 pairs post.';
+    reminder.messages.push({
+      label: 'Status',
+      to: '—',
+      body: `Waiting for today’s pairs message (${formatDisplayDate(todayKey)}). After pairs go out, this shows the real pending list + lead DM.`,
+    });
   }
 
-  const qaPair = pairsData.qaPair;
-  const qaMember = qaPair[0];
-  const qaPromptExample = qaMember
-    ? formatPromptMessage(
-        qaMember,
-        qaPair,
-        yesterdayKey,
-        buildPromptOptions(qaMember, qaPair, yesterdayKey)
-      )
-    : null;
+  reminder.example = reminder.messages.map((m) => m.body).join('\n\n———\n\n');
 
   return {
     timezone: config.timezone,
-    schedules: [
-      {
-        id: 'missing_review_prompts',
-        time: cronTimeLabel(config.missingReviewPromptCronSchedule, 10, 50),
-        days: 'Mon–Fri',
-        cron: config.missingReviewPromptCronSchedule,
-        title: 'Personal Missing-Review Follow-up',
-        destination: 'Each member’s personal room',
-        destinationKind: 'personal',
-        description:
-          'Private message in each member’s own room asking why yesterday’s pair review was missing. Their reply updates attendance.',
-        example: promptMessage,
-        exampleForDate: formatDisplayDate(yesterdayKey),
-        exampleNote: promptNote,
-        secondaryExampleTitle: qaPromptExample ? 'QA trio version' : null,
-        secondaryExample: qaPromptExample,
-      },
-      {
-        id: 'missed_review',
-        time: cronTimeLabel(config.missedReviewCronSchedule, 11, 20),
-        days: 'Mon–Fri',
-        cron: config.missedReviewCronSchedule,
-        title: 'Missed Review Notice',
-        destination: 'Main Pair Reviews room',
-        destinationKind: 'main',
-        description:
-          'Posts yesterday’s missing pairs to the main room, including whatever each member answered in their personal room.',
-        example: missedReviewMessage,
-        exampleForDate: formatDisplayDate(yesterdayKey),
-        exampleNote: missedReviewNote,
-      },
-      {
-        id: 'daily_pairs',
-        time: cronTimeLabel(config.cronSchedule, 11, 30),
-        days: 'Mon–Fri',
-        cron: config.cronSchedule,
-        title: 'Daily Pairs Message',
-        destination: 'Main Pair Reviews room',
-        destinationKind: 'main',
-        description: 'Posts today’s pair assignments to the Element room.',
-        example: dailyPairsMessage,
-      },
-      {
-        id: 'review_reminder',
-        time: cronTimeLabel(config.reminderCronSchedule, 18, 50),
-        days: 'Mon–Fri',
-        cron: config.reminderCronSchedule,
-        title: 'Review Reminder',
-        destination: 'Main Pair Reviews room',
-        destinationKind: 'main',
-        description:
-          'Same-day reminder for pairs that have not submitted their review yet.',
-        example: reminderMessage,
-      },
-    ],
+    schedules: [leadFollowUps, missedNotice, dailyPairs, discussion, reminder],
   };
 };

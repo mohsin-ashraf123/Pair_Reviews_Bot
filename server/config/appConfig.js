@@ -115,6 +115,7 @@ export const config = {
   reminderCronSchedule: process.env.REMINDER_CRON_SCHEDULE || '50 18 * * 1-5',
   missedReviewCronSchedule: morningSchedules.missedReview,
   missingReviewPromptCronSchedule: morningSchedules.prompt,
+  discussionCronSchedule: process.env.DISCUSSION_PROMPT_CRON_SCHEDULE || '0 17 * * 1-5',
   memberMatrixMap: parseMemberMatrixMap(process.env.MEMBER_MATRIX_MAP),
   memberRoomMap: parseMemberRoomMap(process.env.MEMBER_ROOM_MAP),
   matrix: {
@@ -124,6 +125,10 @@ export const config = {
     // Dedicated bot device (required for E2EE — do NOT reuse Element Web token)
     user: (process.env.MATRIX_USER || '').trim(),
     password: (process.env.MATRIX_PASSWORD || '').trim(),
+  },
+  ai: {
+    openRouterApiKey: (process.env.OPENROUTER_API_KEY || '').trim(),
+    openRouterModel: (process.env.OPENROUTER_MODEL || '').trim(),
   },
 };
 

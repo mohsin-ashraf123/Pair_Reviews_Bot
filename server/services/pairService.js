@@ -351,8 +351,8 @@ export const getAllScheduleCountdowns = (date = new Date()) => {
   const jobs = [
     {
       id: 'missing_review_prompts',
-      title: 'Personal follow-ups',
-      destination: 'Each member’s personal room',
+      title: 'Lead team report',
+      destination: 'Yesterday’s lead — personal room',
       destinationKind: 'personal',
       cron: config.missingReviewPromptCronSchedule,
       fallbackHour: 10,
@@ -377,9 +377,18 @@ export const getAllScheduleCountdowns = (date = new Date()) => {
       fallbackMinute: 30,
     },
     {
+      id: 'discussion_prompts',
+      title: 'Meeting discussion check',
+      destination: 'One member per pair (personal room)',
+      destinationKind: 'personal',
+      cron: config.discussionCronSchedule,
+      fallbackHour: 17,
+      fallbackMinute: 0,
+    },
+    {
       id: 'review_reminder',
       title: 'Review reminder',
-      destination: 'Main Pair Reviews room',
+      destination: 'Main room + today’s lead',
       destinationKind: 'main',
       cron: config.reminderCronSchedule,
       fallbackHour: 18,
