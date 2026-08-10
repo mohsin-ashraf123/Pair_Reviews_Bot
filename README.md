@@ -107,7 +107,7 @@ Uzair will make sure all above today
 Each member has a personal room (`MEMBER_ROOM_MAP`). When their pair review is
 missing, the bot asks them privately why and their reply drives attendance.
 
-Developer pair (5 options):
+Developer pair (6 options):
 
 ```
 🔔 Missing Review — August 5, 2026
@@ -121,14 +121,15 @@ Reply with one letter only:
 A — Saad was absent
 B — I was absent
 C — Both of us were absent
-D — I was on half day leave
-E — Forgot to send the review (August 5, 2026)
+D — Saad was on half day leave
+E — I was on half day leave
+F — Forgot to send the review (August 5, 2026)
 
 Example: A
 ```
 
-The QA trio gets 6 options (one per partner, self, all, half day, forgot).
-Replying with two letters (`A B`) marks both partners absent.
+The QA trio gets options for each partner’s absence and half-day leave, plus
+self / all / forgot. Replying with two letters (`A B`) merges those claims.
 
 How answers map to **Performance**:
 

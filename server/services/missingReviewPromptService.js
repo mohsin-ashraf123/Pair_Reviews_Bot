@@ -7,14 +7,17 @@ import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate, emitReviewUpdate } from './socketService.js';
 
-const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 /**
- * Options depend on pair size. A member always reports their own half day,
- * since every member of the pair gets their own message.
+ * Options depend on pair size. Each member can report absences and half-day
+ * leave for themselves or for a partner.
  *
- * 2-member dev pair → partner absent / self absent / both absent / half day / forgot
- * 3-member QA pair  → each partner absent / self absent / all absent / half day / forgot
+ * 2-member pair example:
+ *   A partner absent · B I was absent · C both absent
+ *   D partner half day · E I was half day · F forgot
+ *
+ * QA trio adds one absent + one half-day option per partner.
  */
 export const buildPromptOptions = (member, pair, dateKey) => {
   const partners = pair.filter((name) => name !== member);
@@ -43,6 +46,10 @@ export const buildPromptOptions = (member, pair, dateKey) => {
     push('Both of us were absent', 'all_absent', [member, ...partners]);
   } else {
     push('All of us were absent', 'all_absent', [member, ...partners]);
+  }
+
+  for (const partner of partners) {
+    push(`${partner} was on half day leave`, 'partner_half_day', [], [partner]);
   }
 
   push('I was on half day leave', 'half_day', [], [member]);
@@ -117,7 +124,7 @@ export const parsePromptReply = (body, options) => {
   const cleaned = trimmed.replace(/^option[s]?\s*/i, '');
   const letters = [
     ...new Set(
-      (cleaned.match(/\b[a-fA-F]\b/g) || []).map((letter) => letter.toUpperCase())
+      (cleaned.match(/\b[a-hA-H]\b/g) || []).map((letter) => letter.toUpperCase())
     ),
   ];
   const matched = letters
@@ -146,51 +153,98 @@ export const parsePromptReply = (body, options) => {
 };
 
 /**
- * Apply an answer to the day's attendance record. Pair members who are not
- * reported absent were present but blocked by their partner, so they are
- * excused instead of counted absent.
+ * Rebuild attendance for a date from every answered follow-up.
+ * Self half-day reports win over a partner later saying "was absent".
  */
-const applyAnswerToReview = async (prompt, option) => {
-  const review = await DailyReview.findOne({ dateKey: prompt.dateKey });
+export const recomputeAttendanceFromPrompts = async (dateKey) => {
+  const review = await DailyReview.findOne({ dateKey });
   if (!review) return null;
 
-  const absent = new Set(review.absentMembers || []);
-  const late = new Set(review.lateReviewedMembers || []);
-  const excused = new Set(review.excusedMembers || []);
-  const halfDay = new Set(review.halfDayMembers || []);
+  const prompts = await MissingReviewPrompt.find({
+    dateKey,
+    status: 'answered',
+  });
 
-  if (option.type === 'forgot') {
-    for (const name of prompt.pair) {
-      late.add(name);
-      absent.delete(name);
-      excused.delete(name);
-    }
-  } else {
-    for (const name of option.absentMembers || []) {
-      if (late.has(name)) continue;
-      absent.add(name);
-      excused.delete(name);
-      halfDay.delete(name);
+  const absent = new Set();
+  const halfDay = new Set();
+  const late = new Set();
+  const selfHalfDay = new Set();
+  const selfAbsent = new Set();
+  const touchedPairs = [];
+
+  for (const prompt of prompts) {
+    const response = prompt.response || {};
+    touchedPairs.push(prompt.pair || []);
+
+    if (response.type === 'forgot') {
+      for (const name of prompt.pair || []) late.add(name);
+      continue;
     }
 
-    for (const name of option.halfDayMembers || []) {
-      if (late.has(name) || absent.has(name)) continue;
+    let halfDayNames = [...(response.halfDayMembers || [])];
+    // Older replies stored type=half_day but left halfDayMembers empty.
+    if (!halfDayNames.length && response.type === 'half_day') {
+      halfDayNames = [prompt.member];
+    }
+
+    for (const name of halfDayNames) {
       halfDay.add(name);
-      excused.delete(name);
+      if (name === prompt.member) selfHalfDay.add(name);
     }
 
-    for (const name of prompt.pair) {
-      if (absent.has(name) || late.has(name) || halfDay.has(name)) continue;
-      excused.add(name);
+    for (const name of response.absentMembers || []) {
+      absent.add(name);
+      if (name === prompt.member) selfAbsent.add(name);
     }
   }
 
+  // Half day is more specific than full absent — keep the half-day claim.
+  // A member's own half-day reply always beats a partner calling them absent.
+  for (const name of halfDay) {
+    absent.delete(name);
+  }
+  for (const name of selfHalfDay) {
+    absent.delete(name);
+    halfDay.add(name);
+  }
+
+  const excused = new Set();
+  for (const pair of touchedPairs) {
+    for (const name of pair) {
+      if (absent.has(name) || halfDay.has(name) || late.has(name)) continue;
+      const partnerBlocked = pair.some(
+        (other) =>
+          other !== name &&
+          (absent.has(other) || halfDay.has(other))
+      );
+      if (partnerBlocked) excused.add(name);
+    }
+  }
+
+  for (const name of late) {
+    absent.delete(name);
+    halfDay.delete(name);
+    excused.delete(name);
+  }
+
   review.absentMembers = [...absent];
-  review.lateReviewedMembers = [...late];
-  review.excusedMembers = [...excused];
   review.halfDayMembers = [...halfDay];
+  review.excusedMembers = [...excused];
+  review.lateReviewedMembers = [...late];
   await review.save();
   return review;
+};
+
+const applyAnswerToReview = async (prompt, option) => {
+  // Ensure halfDayMembers is present even when older replies omitted it.
+  if (prompt.response) {
+    prompt.response.absentMembers = option.absentMembers || prompt.response.absentMembers || [];
+    prompt.response.halfDayMembers =
+      option.halfDayMembers || prompt.response.halfDayMembers || [];
+    prompt.response.type = option.type || prompt.response.type;
+  }
+
+  return recomputeAttendanceFromPrompts(prompt.dateKey);
 };
 
 const promptToPayload = (prompt) => ({
@@ -344,7 +398,8 @@ export const handleMemberReply = async (member, roomId, body, eventId) => {
     letter: option.letter,
     label: option.label,
     type: option.type,
-    absentMembers: option.absentMembers,
+    absentMembers: option.absentMembers || [],
+    halfDayMembers: option.halfDayMembers || [],
     body,
     eventId,
     respondedAt: new Date(),
