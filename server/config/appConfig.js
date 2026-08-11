@@ -116,6 +116,11 @@ export const config = {
   missedReviewCronSchedule: morningSchedules.missedReview,
   missingReviewPromptCronSchedule: morningSchedules.prompt,
   discussionCronSchedule: process.env.DISCUSSION_PROMPT_CRON_SCHEDULE || '0 17 * * 1-5',
+  // Sir AI report: prepare 5:58 PM, send 6:00 PM (Mon–Fri)
+  bossReportPrepareCronSchedule:
+    process.env.BOSS_REPORT_PREPARE_CRON_SCHEDULE || '58 17 * * 1-5',
+  bossReportSendCronSchedule:
+    process.env.BOSS_REPORT_SEND_CRON_SCHEDULE || '0 18 * * 1-5',
   memberMatrixMap: parseMemberMatrixMap(process.env.MEMBER_MATRIX_MAP),
   memberRoomMap: parseMemberRoomMap(process.env.MEMBER_ROOM_MAP),
   matrix: {
@@ -125,6 +130,9 @@ export const config = {
     // Dedicated bot device (required for E2EE — do NOT reuse Element Web token)
     user: (process.env.MATRIX_USER || '').trim(),
     password: (process.env.MATRIX_PASSWORD || '').trim(),
+  },
+  boss: {
+    roomId: (process.env.BOSS_MATRIX_ROOM_ID || '').trim(),
   },
   ai: {
     openRouterApiKey: (process.env.OPENROUTER_API_KEY || '').trim(),

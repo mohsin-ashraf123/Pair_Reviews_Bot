@@ -51,7 +51,19 @@ export const parseMentionedMembers = (body) => {
   return found;
 };
 
-/** Return today's pair that exactly matches the mentioned names, or null. */
+/** True when this assigned pair is the configured QA trio. */
+export const isQaTrioPair = (pair = []) => {
+  const qa = config.qaTeam || [];
+  if (!qa.length || pair.length !== qa.length) return false;
+  const qaSet = new Set(qa);
+  return pair.every((name) => qaSet.has(name));
+};
+
+/**
+ * Return today's assigned pair for the mentioned names.
+ * Exact match first; QA trio also accepts any 2-of-3 subset
+ * (one member missing — not a wrong pair).
+ */
 export const findMatchingPair = (mentionedNames, pairs) => {
   if (!mentionedNames.length || !pairs?.length) return null;
 
@@ -62,6 +74,16 @@ export const findMatchingPair = (mentionedNames, pairs) => {
     if (pair.length !== mentionedNames.length) continue;
     if (pair.every((member) => mentionedSet.has(member))) {
       return pair;
+    }
+  }
+
+  // Habiba+Aqeel / Habiba+Adil / Aqeel+Adil against Habiba+Aqeel+Adil
+  if (mentionedNames.length === 2) {
+    for (const pair of pairs) {
+      if (!isQaTrioPair(pair)) continue;
+      if (mentionedNames.every((name) => pair.includes(name))) {
+        return pair;
+      }
     }
   }
 
@@ -151,9 +173,39 @@ export const recomputeReviewedMembers = async (dateKey) => {
   return state;
 };
 
-export const getPendingPairs = (pairs, reviewedMembers = []) => {
+/** Members already covered by a review or an attendance reason. */
+export const getAccountedMembers = (review) => {
+  const accounted = new Set(review?.reviewedMembers || []);
+  for (const list of [
+    review?.absentMembers,
+    review?.halfDayMembers,
+    review?.excusedMembers,
+    review?.lateReviewedMembers,
+  ]) {
+    for (const name of list || []) accounted.add(name);
+  }
+  return accounted;
+};
+
+/**
+ * Pairs that still need a reason for at least one member.
+ * Pass the DailyReview doc (preferred) so absent/half-day/etc. count as done.
+ * Passing a bare reviewedMembers array keeps the old behavior.
+ */
+export const getPendingPairs = (pairs, reviewedMembersOrReview = []) => {
+  const accounted = !Array.isArray(reviewedMembersOrReview)
+    ? getAccountedMembers(reviewedMembersOrReview)
+    : new Set(reviewedMembersOrReview || []);
+
+  return (pairs || []).filter((pair) =>
+    pair.some((member) => !accounted.has(member))
+  );
+};
+
+/** Pairs that have at least one reviewed member (includes partial QA). */
+export const getSubmittedPairs = (pairs = [], reviewedMembers = []) => {
   const reviewed = new Set(reviewedMembers);
-  return pairs.filter((pair) => pair.some((member) => !reviewed.has(member)));
+  return pairs.filter((pair) => pair.some((member) => reviewed.has(member)));
 };
 
 export const formatReminderMessage = (lead, pendingPairs) => {
@@ -203,14 +255,14 @@ export const formatMissedReviewMessage = (
   if (undiscussedPairs.length) {
     const lines = undiscussedPairs.map((entry) => {
       const label = (entry.pair || []).join(' + ');
-      return `${label} (not discussed in the meeting)`;
+      return `${label} — review was not discussed in yesterday’s meeting`;
     });
 
     sections.push(
       [
         pendingPairs.length
-          ? 'Also not discussed in yesterday’s meeting:'
-          : `Yesterday’s meeting — these reviews were not discussed:`,
+          ? 'Also — these pair reviews were not discussed in yesterday’s meeting:'
+          : `Yesterday (${displayDate}) — these pair reviews were not discussed in the meeting:`,
         '',
         ...lines,
       ].join('\n')
@@ -291,6 +343,13 @@ export const recordReviewFromMessage = async (
   }
 
   const pairKey = buildPairKey(matchedPair);
+  // For partial QA (2 of 3), only the named members count as reviewed.
+  const presentMembers = matchedPair.filter((name) => mentioned.includes(name));
+  const missingMembers = matchedPair.filter((name) => !mentioned.includes(name));
+  const attendancePair =
+    presentMembers.length > 0 && presentMembers.length < matchedPair.length
+      ? presentMembers
+      : matchedPair;
 
   if (eventId) {
     const msg = await RoomMessage.findOne({ eventId });
@@ -322,14 +381,28 @@ export const recordReviewFromMessage = async (
 
     await RoomMessage.updateOne(
       { eventId },
-      { countsAsReview: true, matchedPair, pairKey }
+      { countsAsReview: true, matchedPair: attendancePair, pairKey }
     );
   }
 
   await recomputeReviewedMembers(dateKey);
-  console.log(`[review] Marked pair complete: ${matchedPair.join(' + ')} (${dateKey})`);
 
-  return { status: 'success', matchedPair, pairKey };
+  if (missingMembers.length === 1) {
+    console.log(
+      `[review] Partial QA review: ${attendancePair.join(' + ')} (missing ${missingMembers[0]}) (${dateKey})`
+    );
+  } else {
+    console.log(`[review] Marked pair complete: ${matchedPair.join(' + ')} (${dateKey})`);
+  }
+
+  return {
+    status: 'success',
+    matchedPair,
+    pairKey,
+    presentMembers: attendancePair,
+    missingMembers,
+    partialQa: missingMembers.length === 1,
+  };
 };
 
 /** Undo review attendance when a review message is deleted in Element. */
@@ -363,7 +436,7 @@ export const buildReviewState = (review) => {
     };
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  const pendingPairs = getPendingPairs(review.pairs, review);
 
   return {
     dateKey: review.dateKey,

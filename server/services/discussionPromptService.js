@@ -124,7 +124,7 @@ export const sendDiscussionPrompts = async (
   }
 
   const pendingKeys = new Set(
-    getPendingPairs(review.pairs, review.reviewedMembers).map((p) => buildPairKey(p))
+    getPendingPairs(review.pairs, review).map((p) => buildPairKey(p))
   );
 
   const prompts = [];
@@ -299,7 +299,7 @@ export const previewDiscussionPrompts = async (
   }
 
   const pendingKeys = new Set(
-    getPendingPairs(review.pairs, review.reviewedMembers).map((p) => buildPairKey(p))
+    getPendingPairs(review.pairs, review).map((p) => buildPairKey(p))
   );
 
   const prompts = [];

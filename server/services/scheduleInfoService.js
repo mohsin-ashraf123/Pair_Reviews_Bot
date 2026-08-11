@@ -12,6 +12,7 @@ import {
   formatReminderMessage,
   formatMissedReviewMessage,
   getPendingPairs,
+  getSubmittedPairs,
   buildPairKey,
 } from './reviewService.js';
 import {
@@ -28,11 +29,6 @@ import {
 } from './discussionPromptService.js';
 
 const pairLabel = (pair = []) => pair.join(' + ');
-
-const getSubmittedPairs = (pairs = [], reviewedMembers = []) => {
-  const reviewed = new Set(reviewedMembers);
-  return pairs.filter((pair) => pair.every((name) => reviewed.has(name)));
-};
 
 let scheduleInfoCache = { at: 0, value: null, inflight: null };
 const SCHEDULE_INFO_TTL_MS = 20_000;
@@ -103,10 +99,7 @@ const buildScheduledMessagesInfo = async () => {
 
   if (yesterdayReview?.pairsSentAt) {
     const lead = yesterdayReview.lead;
-    const pending = getPendingPairs(
-      yesterdayReview.pairs,
-      yesterdayReview.reviewedMembers
-    );
+    const pending = getPendingPairs(yesterdayReview.pairs, yesterdayReview);
     const submitted = getSubmittedPairs(
       yesterdayReview.pairs,
       yesterdayReview.reviewedMembers
@@ -141,12 +134,20 @@ const buildScheduledMessagesInfo = async () => {
 
     for (let i = 0; i < pending.length; i += 1) {
       const pair = pending[i];
+      const accounted = new Set([
+        ...(yesterdayReview.reviewedMembers || []),
+        ...(yesterdayReview.absentMembers || []),
+        ...(yesterdayReview.halfDayMembers || []),
+        ...(yesterdayReview.excusedMembers || []),
+        ...(yesterdayReview.lateReviewedMembers || []),
+      ]);
+      const missing = pair.filter((name) => !accounted.has(name));
       leadFollowUps.messages.push({
         label: `3 · Missing pair ${i + 1}/${pending.length}`,
         to: lead,
         body: formatPairChoiceQuestion(
           pair,
-          buildLeadPairOptions(pair),
+          buildLeadPairOptions(pair, missing),
           i,
           pending.length
         ),
@@ -201,7 +202,7 @@ const buildScheduledMessagesInfo = async () => {
   if (yesterdayReview?.pairsSentAt) {
     const actualPending = getPendingPairs(
       yesterdayReview.pairs,
-      yesterdayReview.reviewedMembers
+      yesterdayReview
     );
 
     if (actualPending.length || undiscussedPairs.length) {
@@ -323,10 +324,7 @@ const buildScheduledMessagesInfo = async () => {
   };
 
   if (todayReview?.pairsSentAt) {
-    const pendingToday = getPendingPairs(
-      todayReview.pairs,
-      todayReview.reviewedMembers
-    );
+    const pendingToday = getPendingPairs(todayReview.pairs, todayReview);
     const lead = todayReview.lead;
 
     reminder.recipients = [

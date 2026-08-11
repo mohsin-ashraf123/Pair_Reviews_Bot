@@ -186,7 +186,7 @@ export const getMemberRoomsOverview = async (limit = 40) => {
   const scheduledPairs = buildDailyPairsFromDateKey(targetKey).allPairs;
   const pairs = review?.pairsSentAt ? review.pairs : scheduledPairs;
   const pendingPairs = review?.pairsSentAt
-    ? getPendingPairs(review.pairs, review.reviewedMembers)
+    ? getPendingPairs(review.pairs, review)
     : [];
   const pendingMembers = new Set(pendingPairs.flat());
   const reviewedMembers = new Set(review?.reviewedMembers || []);

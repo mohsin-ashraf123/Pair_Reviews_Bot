@@ -3,7 +3,7 @@ import LeadReportSession from '../models/LeadReportSession.js';
 import RoomMessage from '../models/RoomMessage.js';
 import { config } from '../config/appConfig.js';
 import { formatDisplayDate, getKarachiDateKey } from './pairService.js';
-import { getPendingPairs, buildPairKey, buildReviewState } from './reviewService.js';
+import { getPendingPairs, getSubmittedPairs, buildPairKey, buildReviewState } from './reviewService.js';
 import { sendMatrixMessageToRoom } from './matrixService.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
@@ -16,8 +16,13 @@ const noRe = /^(n|no|nah|nope|nahi|nai)\b/i;
 
 const formatPairLabel = (pair = []) => pair.join(' + ');
 
-/** Options the lead picks from for one missing pair. */
-export const buildLeadPairOptions = (pair = []) => {
+/** Options the lead picks from for one missing pair (scoped to still-missing members). */
+export const buildLeadPairOptions = (pair = [], missingMembers = null) => {
+  const targets =
+    Array.isArray(missingMembers) && missingMembers.length
+      ? missingMembers
+      : [...pair];
+
   const options = [];
   let index = 0;
   const push = (label, type, absentMembers = [], halfDayMembers = []) => {
@@ -31,13 +36,13 @@ export const buildLeadPairOptions = (pair = []) => {
     index += 1;
   };
 
-  for (const member of pair) {
+  for (const member of targets) {
     push(`${member} was absent`, 'member_absent', [member]);
   }
-  for (const member of pair) {
+  for (const member of targets) {
     push(`${member} was on half day leave`, 'member_half_day', [], [member]);
   }
-  if (pair.length > 1) {
+  if (targets.length > 1 && targets.length === pair.length) {
     push(
       pair.length === 2 ? 'Both were absent' : 'All were absent',
       'all_absent',
@@ -177,10 +182,16 @@ export const formatVerifyQuestion = (submittedBlock) =>
 
 export const formatPairChoiceQuestion = (pair, options, index, total) => {
   const optionLines = options.map((opt) => `${opt.letter} — ${opt.label}`);
+  const multiHint =
+    options.filter((o) => o.type !== 'forgot' && o.type !== 'all_absent').length >
+    2
+      ? 'You can reply with more than one letter (one reason per person), e.g. A C'
+      : 'Reply with one letter';
+
   return [
     `Missing review ${index + 1}/${total}: ${formatPairLabel(pair)}`,
     '',
-    'Why was this review missing? Reply with one letter:',
+    `Why was this review missing? ${multiHint}:`,
     '',
     ...optionLines,
   ].join('\n');
@@ -226,19 +237,89 @@ const parseYesNo = (body) => {
   return null;
 };
 
-const parseLetterOption = (body, options = []) => {
+/**
+ * Parse one or more option letters.
+ * One reason per member — Adil absent + Adil half-day is rejected.
+ * `forgot` / `all_absent` must stand alone.
+ */
+export const parseLeadPairReply = (body, options = []) => {
   const trimmed = (body || '').trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { error: 'empty' };
+
   const cleaned = trimmed.replace(/^option[s]?\s*/i, '');
-  const match = cleaned.match(/\b([a-jA-J])\b/);
-  if (!match) return null;
-  const letter = match[1].toUpperCase();
-  return options.find((opt) => opt.letter === letter) || null;
+  const letters = [
+    ...new Set(
+      (cleaned.match(/\b[a-jA-J]\b/g) || []).map((letter) => letter.toUpperCase())
+    ),
+  ];
+  if (!letters.length) return { error: 'no_letter' };
+
+  const matched = letters
+    .map((letter) => options.find((opt) => opt.letter === letter))
+    .filter(Boolean);
+  if (!matched.length) return { error: 'unknown' };
+  if (matched.length !== letters.length) return { error: 'unknown' };
+
+  if (matched.length === 1) {
+    return { option: matched[0] };
+  }
+
+  if (matched.some((opt) => opt.type === 'forgot')) {
+    return {
+      error: 'forgot_alone',
+      message:
+        '“Forgot to send” cannot be combined with other letters. Reply with that letter alone, or pick per-person reasons.',
+    };
+  }
+  if (matched.some((opt) => opt.type === 'all_absent')) {
+    return {
+      error: 'all_alone',
+      message:
+        '“All/Both were absent” cannot be combined with other letters. Reply with that letter alone, or pick per-person reasons.',
+    };
+  }
+
+  const claimed = new Map(); // member → option label
+  for (const opt of matched) {
+    const names = [
+      ...(opt.absentMembers || []),
+      ...(opt.halfDayMembers || []),
+    ];
+    for (const name of names) {
+      if (claimed.has(name)) {
+        return {
+          error: 'conflict',
+          message: `${name} already has a reason (${claimed.get(name)}). Pick only one reason per person.`,
+        };
+      }
+      claimed.set(name, opt.label);
+    }
+  }
+
+  return {
+    option: {
+      letter: matched.map((opt) => opt.letter).join('+'),
+      label: matched.map((opt) => opt.label).join(' · '),
+      type: 'combined',
+      absentMembers: [
+        ...new Set(matched.flatMap((opt) => opt.absentMembers || [])),
+      ],
+      halfDayMembers: [
+        ...new Set(matched.flatMap((opt) => opt.halfDayMembers || [])),
+      ],
+    },
+  };
 };
 
-const getSubmittedPairs = (pairs = [], reviewedMembers = []) => {
-  const reviewed = new Set(reviewedMembers);
-  return pairs.filter((pair) => pair.every((member) => reviewed.has(member)));
+const missingMembersForPair = (pair = [], review) => {
+  const accounted = new Set([
+    ...(review?.reviewedMembers || []),
+    ...(review?.absentMembers || []),
+    ...(review?.halfDayMembers || []),
+    ...(review?.excusedMembers || []),
+    ...(review?.lateReviewedMembers || []),
+  ]);
+  return pair.filter((name) => !accounted.has(name));
 };
 
 /** Rebuild attendance from the lead's pair decisions for that day. */
@@ -317,7 +398,7 @@ const ensureSessionFromReview = async (review, { leadOverride = null } = {}) => 
     throw new Error(`No personal room configured for lead ${lead}`);
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  const pendingPairs = getPendingPairs(review.pairs, review);
   const submittedPairs = getSubmittedPairs(review.pairs, review.reviewedMembers);
 
   return LeadReportSession.findOneAndUpdate(
@@ -350,7 +431,7 @@ export const sendLeadEveningNudge = async (
     return { skipped: true, reason: 'Daily pairs not sent yet' };
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  const pendingPairs = getPendingPairs(review.pairs, review);
   if (!pendingPairs.length) {
     return { skipped: true, reason: 'All reviews completed — no lead nudge' };
   }
@@ -386,7 +467,7 @@ export const startLeadMorningReport = async (
   const session = await ensureSessionFromReview(review, { leadOverride });
 
   // Refresh pending/submitted in case reviews arrived overnight.
-  session.pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  session.pendingPairs = getPendingPairs(review.pairs, review);
   session.submittedPairs = getSubmittedPairs(review.pairs, review.reviewedMembers);
   session.pairs = review.pairs;
 
@@ -442,7 +523,9 @@ const askAboutCurrentPair = async (session) => {
   }
 
   const pair = pending[session.currentPairIndex];
-  const options = buildLeadPairOptions(pair);
+  const review = await DailyReview.findOne({ dateKey: session.dateKey });
+  const missing = missingMembersForPair(pair, review);
+  const options = buildLeadPairOptions(pair, missing);
   session.stage = 'awaiting_pair_choice';
   session.currentPairOptions = options;
   session.markModified('currentPairOptions');
@@ -563,17 +646,21 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
   }
 
   if (session.stage === 'awaiting_pair_choice') {
-    const option = parseLetterOption(body, session.currentPairOptions || []);
-    if (!option) {
+    const parsed = parseLeadPairReply(body, session.currentPairOptions || []);
+    if (parsed.error) {
       const optionLines = (session.currentPairOptions || [])
         .map((opt) => `${opt.letter} — ${opt.label}`)
         .join('\n');
+      const hint =
+        parsed.message ||
+        'Please reply with letter(s) from the list (one reason per person).';
       return {
         status: 'invalid',
-        ack: `Please reply with one letter only:\n\n${optionLines}`,
+        ack: `${hint}\n\n${optionLines}`,
       };
     }
 
+    const option = parsed.option;
     const pair = session.pendingPairs[session.currentPairIndex];
 
     if (option.type === 'forgot') {

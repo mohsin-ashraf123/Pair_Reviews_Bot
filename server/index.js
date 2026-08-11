@@ -11,6 +11,7 @@ import { startPairScheduler } from './services/schedulerService.js';
 import { warmMatrixClient } from './services/matrixService.js';
 import { initSocketServer } from './services/socketService.js';
 import { seedMemberRooms, joinMemberRooms } from './services/memberRoomService.js';
+import { joinBossRoom } from './services/bossReportService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '../client/dist');
@@ -62,6 +63,9 @@ const start = async () => {
     // Join personal rooms before crypto warm-up so device lists are available.
     await joinMemberRooms().catch((error) =>
       console.error('Member room join failed:', error.message)
+    );
+    await joinBossRoom().catch((error) =>
+      console.error('Boss room join failed:', error.message)
     );
     startPairScheduler();
     warmMatrixClient().catch((error) =>

@@ -10,6 +10,8 @@ const optionSchema = new mongoose.Schema(
     absentMembers: [String],
     /** members marked as half day leave when this option is chosen */
     halfDayMembers: [String],
+    /** members marked late/forgot when this option is chosen (partial QA) */
+    lateMembers: [String],
   },
   { _id: false }
 );
@@ -22,6 +24,7 @@ const responseSchema = new mongoose.Schema(
     type: String,
     absentMembers: [String],
     halfDayMembers: [String],
+    lateMembers: [String],
     body: String,
     eventId: String,
     respondedAt: Date,

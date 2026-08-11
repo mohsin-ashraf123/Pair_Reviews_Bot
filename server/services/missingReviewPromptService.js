@@ -77,6 +77,70 @@ export const formatPromptMessage = (member, pair, dateKey, options) => {
   ].join('\n');
 };
 
+/** Options when a QA review named 2 of 3 — ask why the missing member was out. */
+export const buildPartialQaPromptOptions = (missingMembers = []) => {
+  const options = [];
+  let index = 0;
+  const push = (
+    label,
+    type,
+    absentMembers = [],
+    halfDayMembers = [],
+    lateMembers = []
+  ) => {
+    options.push({
+      letter: LETTERS[index],
+      label,
+      type,
+      absentMembers,
+      halfDayMembers,
+      lateMembers,
+    });
+    index += 1;
+  };
+
+  for (const name of missingMembers) {
+    push(`${name} was absent`, 'partner_absent', [name]);
+  }
+  for (const name of missingMembers) {
+    push(`${name} was on half day leave`, 'partner_half_day', [], [name]);
+  }
+  for (const name of missingMembers) {
+    push(`Forgot to include ${name} in the review`, 'forgot', [], [], [name]);
+  }
+
+  return options;
+};
+
+export const formatPartialQaPromptMessage = (
+  member,
+  pair,
+  presentMembers,
+  missingMembers,
+  dateKey,
+  options
+) => {
+  const displayDate = formatDisplayDate(dateKey);
+  const optionLines = options.map((opt) => `${opt.letter} — ${opt.label}`);
+  const missingLabel = missingMembers.join(' + ');
+  const presentLabel = presentMembers.join(' + ');
+
+  return [
+    `🔔 Incomplete QA Review — ${displayDate}`,
+    '',
+    `Hi ${member},`,
+    '',
+    `A review came in for ${presentLabel}, but ${missingLabel} was missing.`,
+    `Today’s QA pair is ${pair.join(' + ')}.`,
+    '',
+    'Reply with one letter only:',
+    '',
+    ...optionLines,
+    '',
+    `Example: ${options[0]?.letter || 'A'}`,
+  ].join('\n');
+};
+
 export const formatPromptAck = (prompt, option) => {
   const displayDate = formatDisplayDate(prompt.dateKey);
 
@@ -114,8 +178,8 @@ export const formatInvalidReplyAck = (prompt) => {
 
 /**
  * Match a reply like "A", "b.", "Option C" against the prompt options.
- * Multiple letters ("A B" / "A,B") merge into one combined answer so a
- * QA member can report both partners absent.
+ * Multiple letters ("A B" / "A,C") merge — one reason per person
+ * (half-day wins over absent for the same name).
  */
 export const parsePromptReply = (body, options) => {
   const trimmed = (body || '').trim();
@@ -137,14 +201,20 @@ export const parsePromptReply = (body, options) => {
     const forgot = matched.find((opt) => opt.type === 'forgot');
     if (forgot) return forgot;
 
+    const absent = new Set();
+    const halfDay = new Set();
+    for (const opt of matched) {
+      for (const name of opt.halfDayMembers || []) halfDay.add(name);
+      for (const name of opt.absentMembers || []) absent.add(name);
+    }
+    for (const name of halfDay) absent.delete(name);
+
     return {
       letter: matched.map((opt) => opt.letter).join('+'),
       label: matched.map((opt) => opt.label).join(' · '),
       type: 'combined',
-      absentMembers: [...new Set(matched.flatMap((opt) => opt.absentMembers || []))],
-      halfDayMembers: [
-        ...new Set(matched.flatMap((opt) => opt.halfDayMembers || [])),
-      ],
+      absentMembers: [...absent],
+      halfDayMembers: [...halfDay],
     };
   }
 
@@ -177,7 +247,11 @@ export const recomputeAttendanceFromPrompts = async (dateKey) => {
     touchedPairs.push(prompt.pair || []);
 
     if (response.type === 'forgot') {
-      for (const name of prompt.pair || []) late.add(name);
+      const lateNames =
+        response.lateMembers?.length > 0
+          ? response.lateMembers
+          : prompt.pair || [];
+      for (const name of lateNames) late.add(name);
       continue;
     }
 
@@ -271,7 +345,7 @@ export const sendMissingReviewPrompts = async (dateKey, { onlyMember = null } = 
     return { skipped: true, reason: 'No pairs were sent on that day', prompts: [] };
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  const pendingPairs = getPendingPairs(review.pairs, review);
   if (!pendingPairs.length) {
     return { skipped: true, reason: 'All reviews were submitted', prompts: [] };
   }
@@ -378,6 +452,99 @@ export const sendMissingReviewPrompts = async (dateKey, { onlyMember = null } = 
   return { skipped: false, dateKey, pendingPairs, prompts };
 };
 
+/**
+ * After a 2-of-3 QA review lands, DM one present member about the missing person.
+ */
+export const sendPartialQaMissingPrompt = async ({
+  dateKey,
+  pair,
+  presentMembers = [],
+  missingMembers = [],
+}) => {
+  if (!missingMembers.length || !presentMembers.length) {
+    return { skipped: true, reason: 'Nothing missing' };
+  }
+
+  const candidates = presentMembers.filter((name) => getRoomIdForMember(name));
+  if (!candidates.length) {
+    return { skipped: true, reason: 'No personal room for present members' };
+  }
+
+  // Prefer someone who does not already have an open/answered prompt today.
+  let member = null;
+  for (const name of candidates) {
+    const existing = await MissingReviewPrompt.findOne({ dateKey, member: name });
+    if (!existing || existing.status === 'failed') {
+      member = name;
+      break;
+    }
+  }
+  if (!member) {
+    return {
+      skipped: true,
+      reason: 'Present members already have a follow-up prompt for this day',
+    };
+  }
+
+  const roomId = getRoomIdForMember(member);
+  const options = buildPartialQaPromptOptions(missingMembers);
+  const message = formatPartialQaPromptMessage(
+    member,
+    pair,
+    presentMembers,
+    missingMembers,
+    dateKey,
+    options
+  );
+
+  try {
+    const result = await sendMatrixMessageToRoom(roomId, message, {
+      kind: 'partial_qa_missing_dm',
+      member,
+      dateKey,
+    });
+
+    const saved = await MissingReviewPrompt.findOneAndUpdate(
+      { dateKey, member },
+      {
+        $set: {
+          promptDateKey: getKarachiDateKey(),
+          pair,
+          partners: pair.filter((name) => name !== member),
+          roomId,
+          eventId: result.event_id,
+          message,
+          options,
+          status: 'pending',
+          sendError: null,
+          sentAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    await logMemberRoomMessage({
+      member,
+      roomId,
+      body: message,
+      eventId: result.event_id,
+      category: 'bot_dm_prompt',
+      dateKey,
+    });
+    await touchMemberRoom(member, { lastPromptAt: new Date() });
+    emitMemberRoomUpdate({ dateKey, prompts: [promptToPayload(saved)] });
+
+    console.log(
+      `[prompt] Partial QA follow-up → ${member} about ${missingMembers.join(', ')} (${dateKey})`
+    );
+
+    return { skipped: false, prompt: promptToPayload(saved), member, missingMembers };
+  } catch (error) {
+    console.error(`[prompt] Partial QA DM failed for ${member}: ${error.message}`);
+    return { skipped: true, reason: error.message };
+  }
+};
+
 /** Handle a member's reply inside their personal room. */
 export const handleMemberReply = async (member, roomId, body, eventId) => {
   const prompt = await MissingReviewPrompt.findOne({
@@ -404,6 +571,7 @@ export const handleMemberReply = async (member, roomId, body, eventId) => {
     type: option.type,
     absentMembers: option.absentMembers || [],
     halfDayMembers: option.halfDayMembers || [],
+    lateMembers: option.lateMembers || [],
     body,
     eventId,
     respondedAt: new Date(),

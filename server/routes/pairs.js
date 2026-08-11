@@ -442,14 +442,14 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
         review.lead = LEAD;
         if (!review.pairsSentAt) review.pairsSentAt = new Date();
         if (!review.pairs?.length) review.pairs = scheduled.allPairs;
-        let pending = getPendingPairs(review.pairs, review.reviewedMembers);
+        let pending = getPendingPairs(review.pairs, review);
         if (!pending.length) {
           const lastPair = review.pairs[review.pairs.length - 1] || [];
           review.reviewedMembers = (review.reviewedMembers || []).filter(
             (name) => !lastPair.includes(name)
           );
         }
-        pending = getPendingPairs(review.pairs, review.reviewedMembers);
+        pending = getPendingPairs(review.pairs, review);
         if (pending.length === review.pairs.length && review.pairs.length > 1) {
           for (const name of review.pairs[0]) {
             if (!review.reviewedMembers.includes(name)) {
@@ -571,7 +571,7 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
       todayKey,
       yesterdayKey,
       todayPending: todayReview
-        ? getPendingPairs(todayReview.pairs, todayReview.reviewedMembers).length
+        ? getPendingPairs(todayReview.pairs, todayReview).length
         : 0,
       steps,
       session: finalSession

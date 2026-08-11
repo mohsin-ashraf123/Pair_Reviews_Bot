@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { API } from '../config/api.js';
 import './AiAnalyzed.css';
@@ -14,9 +14,116 @@ function answerTone(answer, status) {
   return 'muted';
 }
 
+function ReviewDayDropdown({
+  dates,
+  value,
+  onChange,
+  disabled,
+  loading,
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  const selected = useMemo(
+    () => dates.find((d) => d.dateKey === value) || null,
+    [dates, value]
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointer = (e) => {
+      if (!rootRef.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const label = loading
+    ? 'Loading days…'
+    : selected
+      ? selected.dateLabel
+      : 'Select review day';
+
+  return (
+    <div
+      className={`ai-day-dd${open ? ' open' : ''}${disabled ? ' disabled' : ''}`}
+      ref={rootRef}
+    >
+      <button
+        type="button"
+        className="ai-day-dd-trigger"
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="ai-day-dd-copy">
+          <span className="ai-day-dd-label">{label}</span>
+          {selected && (selected.isDefault || selected.isToday) && (
+            <span className="ai-day-dd-tags">
+              {selected.isDefault && (
+                <span className="ai-day-tag latest">Latest</span>
+              )}
+              {selected.isToday && <span className="ai-day-tag today">Today</span>}
+            </span>
+          )}
+        </span>
+        <span className="ai-day-dd-chevron" aria-hidden>
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="ai-day-dd-menu" role="listbox">
+          {!dates.length ? (
+            <p className="ai-day-dd-empty">No review days yet</p>
+          ) : (
+            dates.map((d) => {
+              const active = d.dateKey === value;
+              return (
+                <button
+                  key={d.dateKey}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`ai-day-dd-option${active ? ' selected' : ''}`}
+                  onClick={() => {
+                    onChange(d.dateKey);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="ai-day-dd-option-main">
+                    <span className="ai-day-dd-option-date">{d.dateLabel}</span>
+                    <span className="ai-day-dd-option-key">{d.dateKey}</span>
+                  </span>
+                  <span className="ai-day-dd-option-aside">
+                    {d.isDefault && (
+                      <span className="ai-day-tag latest">Latest</span>
+                    )}
+                    {d.isToday && (
+                      <span className="ai-day-tag today">Today</span>
+                    )}
+                    {active && <span className="ai-day-check">✓</span>}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AiAnalyzed() {
   const [dates, setDates] = useState([]);
-  const [todayKey, setTodayKey] = useState('');
   const [dateKey, setDateKey] = useState('');
   const [loadingDates, setLoadingDates] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -32,9 +139,10 @@ function AiAnalyzed() {
         const res = await axios.get(`${API}/ai/analyze/dates`);
         if (cancelled) return;
         const items = res.data?.items || [];
+        const initial =
+          res.data?.defaultReviewKey || items[0]?.dateKey || '';
         setDates(items);
-        setTodayKey(res.data?.todayKey || '');
-        setDateKey(res.data?.todayKey || items[0]?.dateKey || '');
+        setDateKey(initial);
       } catch (err) {
         if (!cancelled) {
           setError(err.response?.data?.message || 'Could not load dates');
@@ -59,9 +167,7 @@ function AiAnalyzed() {
     } catch (err) {
       setResult(null);
       setError(
-        err.response?.data?.message ||
-          err.message ||
-          'Analysis failed'
+        err.response?.data?.message || err.message || 'Analysis failed'
       );
     } finally {
       setAnalyzing(false);
@@ -85,35 +191,26 @@ function AiAnalyzed() {
         <div>
           <h2>AI Analyzed</h2>
           <p>
-            Lead report chat + meeting checks → short ready brief
+            Short Sir-ready report — **bold** for Element, best marked inline
           </p>
         </div>
       </div>
 
       <div className="ai-toolbar">
-        <label className="ai-field">
-          <span>Meeting day</span>
-          <select
+        <div className="ai-field">
+          <span>Review day</span>
+          <ReviewDayDropdown
+            dates={dates}
             value={dateKey}
-            onChange={(e) => {
-              setDateKey(e.target.value);
+            loading={loadingDates}
+            disabled={loadingDates || analyzing}
+            onChange={(next) => {
+              setDateKey(next);
               setResult(null);
               setError('');
             }}
-            disabled={loadingDates || analyzing}
-          >
-            {loadingDates && <option value="">Loading…</option>}
-            {!loadingDates && !dates.length && (
-              <option value={todayKey || ''}>Today</option>
-            )}
-            {dates.map((d) => (
-              <option key={d.dateKey} value={d.dateKey}>
-                {d.dateLabel}
-                {d.isToday ? ' · today' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
         <button
           type="button"
@@ -130,15 +227,17 @@ function AiAnalyzed() {
       {!result && !analyzing && !error && (
         <div className="ai-empty">
           <p>
-            Pick a meeting day and hit Analyze. Uses your OpenRouter model from
-            Settings.
+            Pick a review day and hit Analyze. Builds a clean report for Sir
+            with summaries, best review, attendance, and meeting checks.
           </p>
         </div>
       )}
 
       {analyzing && (
         <div className="ai-empty">
-          <p className="ai-pulse">Reading lead chat & meeting replies…</p>
+          <p className="ai-pulse">
+            Reading reviews, lead report & meeting checks…
+          </p>
         </div>
       )}
 
@@ -146,8 +245,11 @@ function AiAnalyzed() {
         <div className="ai-result">
           <div className="ai-result-meta">
             <span>
-              Review {result.reviewDateLabel}
+              {result.reviewDateLabel}
               {result.sources?.lead ? ` · Lead ${result.sources.lead}` : ''}
+              {typeof result.sources?.reviewCount === 'number'
+                ? ` · ${result.sources.reviewCount} reviews`
+                : ''}
             </span>
             <span className="ai-model-chip">
               {result.modelName || result.modelId}
@@ -156,7 +258,7 @@ function AiAnalyzed() {
 
           <div className="ai-brief-card">
             <div className="ai-brief-head">
-              <h3>Ready message</h3>
+              <h3>Sir report</h3>
               <button type="button" className="ai-copy-btn" onClick={handleCopy}>
                 {copied ? 'Copied' : 'Copy'}
               </button>
@@ -176,6 +278,25 @@ function AiAnalyzed() {
                     ? ` · ${result.sources.leadMessageCount} msgs`
                     : ''}
                 </p>
+              </div>
+              <div className="ai-source-card">
+                <span className="ai-source-label">Reviews used</span>
+                <strong>
+                  {result.sources?.reviewCount ?? 0} submitted
+                </strong>
+                <ul className="ai-disc-list">
+                  {(result.sources?.reviews || []).length === 0 && (
+                    <li className="muted">None found</li>
+                  )}
+                  {(result.sources?.reviews || []).map((r) => (
+                    <li key={r.pairLabel || pairLabel(r.pair)}>
+                      <span>{r.pairLabel || pairLabel(r.pair)}</span>
+                      <span className="ai-disc-pair">
+                        {r.senderName || ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
               <div className="ai-source-card">
                 <span className="ai-source-label">Meeting checks</span>

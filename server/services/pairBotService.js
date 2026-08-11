@@ -161,7 +161,7 @@ export const sendReviewReminder = async (
     return { skipped: true, reason: 'Daily pairs not sent yet' };
   }
 
-  const pendingPairs = getPendingPairs(review.pairs, review.reviewedMembers);
+  const pendingPairs = getPendingPairs(review.pairs, review);
   if (pendingPairs.length === 0) {
     return { skipped: true, reason: 'All reviews completed', pendingPairs: [] };
   }
@@ -301,7 +301,7 @@ export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const undiscussedPairs = await getUndiscussedPairsForMeeting(yesterdayKey);
 
   const pendingPairs = review?.pairsSentAt
-    ? getPendingPairs(review.pairs, review.reviewedMembers)
+    ? getPendingPairs(review.pairs, review)
     : [];
 
   if (!pendingPairs.length && !undiscussedPairs.length) {

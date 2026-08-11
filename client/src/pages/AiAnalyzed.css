@@ -44,10 +44,12 @@
 .ai-field {
   display: grid;
   gap: 0.28rem;
-  min-width: 200px;
+  min-width: 260px;
+  flex: 1 1 260px;
+  max-width: 360px;
 }
 
-.ai-field span {
+.ai-field > span {
   font-size: 0.62rem;
   font-weight: 750;
   letter-spacing: 0.05em;
@@ -55,14 +57,173 @@
   color: var(--text-muted);
 }
 
-.ai-field select {
-  min-width: 220px;
-  padding: 0.5rem 0.7rem;
+.ai-day-dd {
+  position: relative;
+}
+
+.ai-day-dd.disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.ai-day-dd-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-height: 44px;
+  padding: 0.45rem 0.7rem 0.45rem 0.8rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--surface-elevated);
-  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ai-day-dd.open .ai-day-dd-trigger,
+.ai-day-dd-trigger:hover {
+  border-color: rgba(31, 61, 54, 0.35);
+  background: #f7f6f3;
+}
+
+.ai-day-dd-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.ai-day-dd-label {
+  font-size: 0.88rem;
+  font-weight: 650;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-day-dd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.ai-day-tag {
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.ai-day-tag.latest {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.ai-day-tag.today {
+  background: #efece6;
+  color: var(--text-secondary);
+}
+
+.ai-day-dd-chevron {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #efeee9;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.ai-day-dd.open .ai-day-dd-chevron {
+  background: var(--primary-soft);
+  border-color: rgba(31, 61, 54, 0.2);
+  color: var(--primary);
+}
+
+.ai-day-dd-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  box-shadow: 0 12px 28px rgba(40, 36, 28, 0.12);
+}
+
+.ai-day-dd-empty {
+  margin: 0;
+  padding: 0.85rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ai-day-dd-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  border: none;
+  border-bottom: 1px solid #efece6;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-day-dd-option:last-child {
+  border-bottom: none;
+}
+
+.ai-day-dd-option:hover {
+  background: #f3f1ec;
+}
+
+.ai-day-dd-option.selected {
+  background: var(--primary-soft);
+}
+
+.ai-day-dd-option-main {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.ai-day-dd-option-date {
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.ai-day-dd-option-key {
+  font-size: 0.68rem;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--text-muted);
+}
+
+.ai-day-dd-option-aside {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.ai-day-check {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--primary);
 }
 
 .ai-analyze-btn,
@@ -190,13 +351,15 @@
 
 .ai-brief-text {
   margin: 0;
-  padding: 1rem 0.95rem;
+  padding: 1.1rem 1rem;
   font-family: inherit;
-  font-size: 0.95rem;
-  line-height: 1.55;
+  font-size: 0.92rem;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text);
+  max-height: min(58vh, 560px);
+  overflow: auto;
 }
 
 .ai-sources h3 {
@@ -210,7 +373,7 @@
 
 .ai-source-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
@@ -321,9 +484,6 @@
 
   .ai-field {
     flex: 1 1 100%;
-  }
-
-  .ai-field select {
-    width: 100%;
+    max-width: none;
   }
 }

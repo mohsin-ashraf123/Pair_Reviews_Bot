@@ -145,7 +145,7 @@ export const getLeadReportDetail = async (dateKey) => {
     session?.roomId || (lead ? getRoomIdForMember(lead) : null);
 
   const pendingPairs = review?.pairsSentAt
-    ? getPendingPairs(review.pairs, review.reviewedMembers)
+    ? getPendingPairs(review.pairs, review)
     : session?.pendingPairs || [];
 
   const messages = session

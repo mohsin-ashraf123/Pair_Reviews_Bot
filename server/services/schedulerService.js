@@ -7,6 +7,10 @@ import {
   sendMissingReviewFollowUps,
   sendDiscussionFollowUps,
 } from './pairBotService.js';
+import {
+  prepareBossDailyReport,
+  sendBossDailyReport,
+} from './bossReportService.js';
 import { getNextDailySendTarget, getAllScheduleCountdowns } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
 
@@ -15,6 +19,8 @@ let reminderTask = null;
 let missedReviewTask = null;
 let promptTask = null;
 let discussionTask = null;
+let bossPrepareTask = null;
+let bossSendTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
@@ -23,6 +29,8 @@ const cronInFlight = {
   missed: false,
   prompts: false,
   discussion: false,
+  bossPrepare: false,
+  bossSend: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -187,6 +195,56 @@ export const startPairScheduler = () => {
     );
     console.log(
       `Discussion prompt scheduler active: "${config.discussionCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (cron.validate(config.bossReportPrepareCronSchedule) && !bossPrepareTask) {
+    bossPrepareTask = cron.schedule(
+      config.bossReportPrepareCronSchedule,
+      () =>
+        runCronJob('bossPrepare', async () => {
+          try {
+            const result = await prepareBossDailyReport('cron');
+            if (result.skipped) {
+              console.log(`[cron] Boss report prepare skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Boss report prepared for ${result.reviewDateKey}`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Boss report prepare failed:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Boss report prepare scheduler active: "${config.bossReportPrepareCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (cron.validate(config.bossReportSendCronSchedule) && !bossSendTask) {
+    bossSendTask = cron.schedule(
+      config.bossReportSendCronSchedule,
+      () =>
+        runCronJob('bossSend', async () => {
+          try {
+            const result = await sendBossDailyReport('cron');
+            if (result.skipped) {
+              console.log(`[cron] Boss report send skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Boss report sent for ${result.reviewDateKey} → ${result.eventId}`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Boss report send failed:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Boss report send scheduler active: "${config.bossReportSendCronSchedule}" (${config.timezone})`
     );
   }
 

@@ -201,6 +201,22 @@ export const persistAndBroadcastMessage = async (payload) => {
           saved.senderId,
           saved.eventId
         );
+      } else if (result?.status === 'success' && result.partialQa) {
+        try {
+          const { sendPartialQaMissingPrompt } = await import(
+            './missingReviewPromptService.js'
+          );
+          await sendPartialQaMissingPrompt({
+            dateKey: saved.dateKey,
+            pair: result.matchedPair,
+            presentMembers: result.presentMembers,
+            missingMembers: result.missingMembers,
+          });
+        } catch (error) {
+          console.error(
+            `[review] Partial QA follow-up failed: ${error.message}`
+          );
+        }
       }
     }
 
