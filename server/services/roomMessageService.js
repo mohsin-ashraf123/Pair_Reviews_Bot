@@ -357,45 +357,43 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
 
   // 5 PM meeting-discussion check (YES/NO) — after lead report, before legacy prompts.
   try {
-    const {
-      handleDiscussionReply,
-      getActiveDiscussionPromptForMember,
-    } = await import('./discussionPromptService.js');
-    const discussionPrompt = await getActiveDiscussionPromptForMember(member);
-    if (discussionPrompt) {
-      if (discussionPrompt.reviewDateKey) {
+    const { handleDiscussionReply } = await import('./discussionPromptService.js');
+    const discussionResult = await handleDiscussionReply(
+      member,
+      roomId,
+      body,
+      eventId
+    );
+    console.log(
+      `[discussion] ${member} -> status=${discussionResult?.status} answer=${discussionResult?.answer || '-'}`
+    );
+
+    if (discussionResult?.status && discussionResult.status !== 'no_prompt') {
+      if (discussionResult.prompt?.reviewDateKey) {
         await RoomMessage.updateOne(
           { eventId },
-          { $set: { dateKey: discussionPrompt.reviewDateKey } }
+          { $set: { dateKey: discussionResult.prompt.reviewDateKey } }
         );
       }
 
-      const discussionResult = await handleDiscussionReply(
-        member,
-        roomId,
-        body,
-        eventId
-      );
-      console.log(
-        `[discussion] ${member} -> status=${discussionResult?.status} answer=${discussionResult?.answer || '-'}`
-      );
-      if (!discussionResult?.ack) return;
-      try {
-        const sent = await sendMatrixMessageToRoom(roomId, discussionResult.ack, {
-          kind: 'discussion_ack',
-          member,
-          dateKey: discussionPrompt.reviewDateKey,
-        });
-        await logMemberRoomMessage({
-          member,
-          roomId,
-          body: discussionResult.ack,
-          eventId: sent.event_id,
-          category: 'bot_dm_ack',
-          dateKey: discussionPrompt.reviewDateKey,
-        });
-      } catch (error) {
-        console.error(`[discussion] Ack failed for ${member}: ${error.message}`);
+      if (discussionResult.ack) {
+        try {
+          const sent = await sendMatrixMessageToRoom(roomId, discussionResult.ack, {
+            kind: 'discussion_ack',
+            member,
+            dateKey: discussionResult.prompt?.reviewDateKey || null,
+          });
+          await logMemberRoomMessage({
+            member,
+            roomId,
+            body: discussionResult.ack,
+            eventId: sent.event_id,
+            category: 'bot_dm_ack',
+            dateKey: discussionResult.prompt?.reviewDateKey || null,
+          });
+        } catch (error) {
+          console.error(`[discussion] Ack failed for ${member}: ${error.message}`);
+        }
       }
       return;
     }
