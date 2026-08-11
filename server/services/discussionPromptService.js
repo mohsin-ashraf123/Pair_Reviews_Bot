@@ -377,11 +377,19 @@ export const previewDiscussionPrompts = async (
 };
 
 export const handleDiscussionReply = async (member, roomId, body, eventId) => {
-  const prompt = await DiscussionPrompt.findOne({
+  let prompt = await DiscussionPrompt.findOne({
     member,
     roomId,
     status: 'pending',
   }).sort({ sentAt: -1 });
+
+  // Fallback: roomId on the doc can be stale / mismatch after remaps.
+  if (!prompt) {
+    prompt = await DiscussionPrompt.findOne({
+      member,
+      status: 'pending',
+    }).sort({ sentAt: -1 });
+  }
 
   if (!prompt) return { status: 'no_prompt' };
 
@@ -401,6 +409,9 @@ export const handleDiscussionReply = async (member, roomId, body, eventId) => {
     eventId,
     respondedAt: new Date(),
   };
+  if (roomId && prompt.roomId !== roomId) {
+    prompt.roomId = roomId;
+  }
   await prompt.save();
   await touchMemberRoom(member, { lastReplyAt: new Date() });
 
@@ -415,6 +426,15 @@ export const handleDiscussionReply = async (member, roomId, body, eventId) => {
       : '✅ Thanks — marked as not discussed. This will be noted in tomorrow’s room update.';
 
   return { status: 'answered', prompt, answer, ack };
+};
+
+/** Latest pending meeting-check prompt for a member (any of their rooms). */
+export const getActiveDiscussionPromptForMember = async (member) => {
+  if (!member) return null;
+  return DiscussionPrompt.findOne({
+    member,
+    status: 'pending',
+  }).sort({ sentAt: -1 });
 };
 
 /** Pairs that answered NO for the meeting on `meetingDateKey`. */
