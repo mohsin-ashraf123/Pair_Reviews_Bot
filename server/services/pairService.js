@@ -386,6 +386,15 @@ export const getAllScheduleCountdowns = (date = new Date()) => {
       fallbackMinute: 0,
     },
     {
+      id: 'boss_daily_report',
+      title: 'Ayaaz Sir report',
+      destination: 'Sir personal room',
+      destinationKind: 'personal',
+      cron: config.bossReportSendCronSchedule,
+      fallbackHour: 18,
+      fallbackMinute: 0,
+    },
+    {
       id: 'review_reminder',
       title: 'Review reminder',
       destination: 'Main room + today’s lead',

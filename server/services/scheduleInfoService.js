@@ -305,6 +305,81 @@ const buildScheduledMessagesInfo = async () => {
 
   discussion.example = discussion.messages.map((m) => m.body).join('\n\n———\n\n');
 
+  // --- 6:00 Sir AI report (prepared at 5:58) ---
+  const bossReviewKey = yesterdayKey;
+  let bossDraft = null;
+  try {
+    const BossDailyReport = (await import('../models/BossDailyReport.js')).default;
+    bossDraft = await BossDailyReport.findOne({ reviewDateKey: bossReviewKey }).lean();
+  } catch {
+    bossDraft = null;
+  }
+
+  const bossRoomId = (config.boss?.roomId || '').trim();
+  const bossReport = {
+    id: 'boss_daily_report',
+    time: cronTimeLabel(config.bossReportSendCronSchedule, 18, 0),
+    days: 'Mon–Fri',
+    cron: config.bossReportSendCronSchedule,
+    title: 'Ayaaz Sir report',
+    destination: 'Sir personal room',
+    destinationKind: 'personal',
+    description:
+      'AI analyzes yesterday’s reviews + lead report + meeting checks. Prepared at 5:58 PM, sent to Ayaaz Sir’s room at 6:00 PM.',
+    exampleForDate: formatDisplayDate(bossReviewKey),
+    recipients: bossRoomId
+      ? [{ name: 'Ayaaz Sir', role: 'Boss report', via: 'Personal room' }]
+      : [],
+    messages: [],
+    exampleNote: null,
+    example: '',
+  };
+
+  if (!bossRoomId) {
+    bossReport.exampleNote = 'BOSS_MATRIX_ROOM_ID is not configured.';
+    bossReport.messages = [
+      {
+        label: 'Status',
+        to: '—',
+        body: 'Set BOSS_MATRIX_ROOM_ID to enable the 6:00 PM Sir report.',
+      },
+    ];
+  } else if (bossDraft?.status === 'sent' && bossDraft.brief) {
+    bossReport.exampleNote = `Already sent for ${formatDisplayDate(bossReviewKey)}.`;
+    bossReport.messages = [
+      {
+        label: '1 · Sent report',
+        to: 'Ayaaz Sir',
+        body: bossDraft.brief,
+      },
+    ];
+  } else if (bossDraft?.status === 'ready' && bossDraft.brief) {
+    bossReport.exampleNote = 'Prepared at 5:58 — waiting for 6:00 PM send.';
+    bossReport.messages = [
+      {
+        label: '1 · Ready report',
+        to: 'Ayaaz Sir',
+        body: bossDraft.brief,
+      },
+    ];
+  } else {
+    bossReport.exampleNote =
+      'At 5:58 PM the AI builds this report; at 6:00 PM it goes to Sir’s room.';
+    bossReport.messages = [
+      {
+        label: '1 · Preview shape',
+        to: 'Ayaaz Sir',
+        body: [
+          `📋 Pair Review Report — ${formatDisplayDate(bossReviewKey)}`,
+          '',
+          '(AI will fill attendance, short review summaries, best mark, and meeting checks.)',
+        ].join('\n'),
+      },
+    ];
+  }
+
+  bossReport.example = bossReport.messages.map((m) => m.body).join('\n\n———\n\n');
+
   // --- 6:50 Reminder + lead nudge ---
   const reminder = {
     id: 'review_reminder',
@@ -367,6 +442,6 @@ const buildScheduledMessagesInfo = async () => {
 
   return {
     timezone: config.timezone,
-    schedules: [leadFollowUps, missedNotice, dailyPairs, discussion, reminder],
+    schedules: [leadFollowUps, missedNotice, dailyPairs, discussion, bossReport, reminder],
   };
 };
