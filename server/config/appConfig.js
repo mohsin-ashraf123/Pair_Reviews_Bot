@@ -111,6 +111,21 @@ export const config = {
   qaTeam: parseList(process.env.QA_TEAM, ['Habiba', 'Aqeel', 'Adil']),
   timezone: process.env.CRON_TIMEZONE || 'Asia/Karachi',
   enableCronScheduler: process.env.ENABLE_CRON_SCHEDULER !== 'false',
+  /**
+   * Only the production host should open the Matrix E2EE client / password-login.
+   * Local with ENABLE_CRON_SCHEDULER=false skips this so Element does not get
+   * endless new "Element Pair Review Bot" sessions ("It was me" popups).
+   * Override with MATRIX_RUN_BOT=true|false if needed.
+   */
+  runMatrixBot:
+    process.env.MATRIX_RUN_BOT === 'true' ||
+    (process.env.MATRIX_RUN_BOT !== 'false' &&
+      process.env.ENABLE_CRON_SCHEDULER !== 'false'),
+  /** Password login creates a new Element device — only when running the bot. */
+  allowMatrixPasswordLogin:
+    process.env.MATRIX_ALLOW_PASSWORD_LOGIN === 'true' ||
+    (process.env.MATRIX_ALLOW_PASSWORD_LOGIN !== 'false' &&
+      process.env.ENABLE_CRON_SCHEDULER !== 'false'),
   cronSchedule: morningSchedules.dailyPairs,
   reminderCronSchedule: process.env.REMINDER_CRON_SCHEDULE || '50 18 * * 1-5',
   missedReviewCronSchedule: morningSchedules.missedReview,

@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import './config/appConfig.js';
+import { config } from './config/appConfig.js';
 import connectDB from './config/db.js';
 import pairRoutes from './routes/pairs.js';
 import { startPairScheduler } from './services/schedulerService.js';
@@ -60,17 +61,25 @@ const start = async () => {
   try {
     await connectDB();
     await seedMemberRooms();
-    // Join personal rooms before crypto warm-up so device lists are available.
-    await joinMemberRooms().catch((error) =>
-      console.error('Member room join failed:', error.message)
-    );
-    await joinBossRoom().catch((error) =>
-      console.error('Boss room join failed:', error.message)
-    );
+
+    if (config.runMatrixBot) {
+      // Join personal rooms before crypto warm-up so device lists are available.
+      await joinMemberRooms().catch((error) =>
+        console.error('Member room join failed:', error.message)
+      );
+      await joinBossRoom().catch((error) =>
+        console.error('Boss room join failed:', error.message)
+      );
+      warmMatrixClient().catch((error) =>
+        console.error('Matrix warm failed:', error.message)
+      );
+    } else {
+      console.log(
+        'Matrix bot client skipped (ENABLE_CRON_SCHEDULER=false) — Element session sirf Railway pe chalega, local se naya login nahi.'
+      );
+    }
+
     startPairScheduler();
-    warmMatrixClient().catch((error) =>
-      console.error('Matrix warm failed:', error.message)
-    );
   } catch (error) {
     console.error('Startup warning:', error.message);
     console.error('Server is up but DB/Matrix may be unavailable — check Railway Variables.');

@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import {
   MatrixAuth,
   MatrixClient,
@@ -14,6 +13,13 @@ import { RustEngine } from 'matrix-bot-sdk/lib/e2ee/RustEngine.js';
 import { initMemberMap } from './memberService.js';
 import { registerMatrixRoomListener } from './roomMessageService.js';
 import { recordBotSendFailure } from './botSendLogService.js';
+import {
+  matrixDataDir as dataDir,
+  persistMatrixDeviceState,
+  readSessionFile,
+  restoreMatrixDeviceState,
+  writeSessionFile,
+} from './matrixSessionStore.js';
 
 // Patch: Synapse rejects device_keys: null AND duplicate OTKs. Handle both gracefully.
 RustEngine.prototype.processKeysUploadRequest = async function processKeysUploadFixed(
@@ -55,33 +61,23 @@ RustEngine.prototype.processKeysUploadRequest = async function processKeysUpload
   );
 };
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, '..', 'data', 'matrix');
-const sessionPath = path.join(dataDir, 'session.json');
-
 LogService.setLogger(new RichConsoleLogger());
 LogService.setLevel(process.env.MATRIX_LOG_LEVEL || 'WARN');
 
 /** Single client for this process — crypto DB can only be open once. */
 let clientPromise = null;
 let activeClient = null;
+let persistTimer = null;
+let shutdownHookInstalled = false;
 
 const ensureDir = (dir) => {
   fs.mkdirSync(dir, { recursive: true });
 };
 
-const readSession = () => {
-  try {
-    if (!fs.existsSync(sessionPath)) return null;
-    return JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
-  } catch {
-    return null;
-  }
-};
+const readSession = () => readSessionFile();
 
 const writeSession = (session) => {
-  ensureDir(dataDir);
-  fs.writeFileSync(sessionPath, JSON.stringify(session, null, 2));
+  writeSessionFile(session);
 };
 
 const removeDirSafe = (dir) => {
@@ -137,6 +133,10 @@ export const resolveAccessCredentials = async () => {
   const homeserver = config.matrix.homeserver;
   const password = config.matrix.password;
   const username = config.matrix.user;
+
+  // Railway disk is ephemeral — pull the last good device from Mongo first.
+  await restoreMatrixDeviceState();
+
   let session = readSession();
 
   /**
@@ -157,6 +157,8 @@ export const resolveAccessCredentials = async () => {
           '/_matrix/client/v3/account/whoami'
         );
         console.log(`Reusing session: ${whoami.user_id} / ${whoami.device_id}`);
+        // Keep Mongo copy fresh even when disk session was already present.
+        persistMatrixDeviceState(session).catch(() => {});
         return session;
       } catch (err) {
         lastError = err;
@@ -178,6 +180,12 @@ export const resolveAccessCredentials = async () => {
 
   // Create a dedicated bot device via password login (required for E2EE)
   if (username && password) {
+    if (!config.allowMatrixPasswordLogin) {
+      throw new Error(
+        'No saved Matrix session and password login is disabled on this host (ENABLE_CRON_SCHEDULER=false). Use Railway for the bot, or set MATRIX_ALLOW_PASSWORD_LOGIN=true only if this machine should own the Element device.'
+      );
+    }
+
     const auth = new MatrixAuth(homeserver);
     let tempClient;
     try {
@@ -204,10 +212,6 @@ export const resolveAccessCredentials = async () => {
       '/_matrix/client/v3/account/whoami'
     );
 
-    // Keep crypto for same device if we somehow re-login same id — wipe unknown stores only
-    const cryptoPath = path.join(dataDir, `crypto-${whoami.device_id}`);
-    // Don't delete crypto if folder already matches — password login always new device
-
     session = {
       homeserver,
       accessToken,
@@ -217,6 +221,7 @@ export const resolveAccessCredentials = async () => {
       via: 'password_login',
     };
     writeSession(session);
+    await persistMatrixDeviceState(session);
     console.log(`Matrix bot session created: ${session.userId} / ${session.deviceId}`);
     return session;
   }
@@ -334,7 +339,37 @@ const createEncryptedClient = async (session) => {
   await initMemberMap(client);
   await registerMatrixRoomListener(client);
   console.log('Matrix E2EE client ready');
+
+  if (session?.deviceId) {
+    await persistMatrixDeviceState(session);
+  }
+  scheduleMatrixDevicePersist();
+
   return client;
+};
+
+const scheduleMatrixDevicePersist = () => {
+  if (persistTimer) return;
+  persistTimer = setInterval(() => {
+    const session = readSession();
+    if (session?.deviceId) {
+      persistMatrixDeviceState(session).catch(() => {});
+    }
+  }, 5 * 60 * 1000);
+  if (typeof persistTimer.unref === 'function') persistTimer.unref();
+
+  if (!shutdownHookInstalled) {
+    shutdownHookInstalled = true;
+    const flush = () => {
+      const session = readSession();
+      if (session?.deviceId) {
+        // Best-effort sync flush before process exit
+        persistMatrixDeviceState(session).catch(() => {});
+      }
+    };
+    process.once('SIGTERM', flush);
+    process.once('SIGINT', flush);
+  }
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -450,6 +485,12 @@ const allowUntrustedDeviceKeyShare = async (client) => {
 export const getMatrixClient = async () => {
   if (!isMatrixConfigured()) {
     throw new Error('Matrix is not configured. Add MATRIX_* values to server/.env');
+  }
+
+  if (!config.runMatrixBot) {
+    throw new Error(
+      'Matrix bot client disabled on this host (ENABLE_CRON_SCHEDULER=false). Railway chalata hai Element session — local pe naya login nahi hoga.'
+    );
   }
 
   if (activeClient) {
