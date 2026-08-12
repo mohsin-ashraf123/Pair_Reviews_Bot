@@ -308,11 +308,12 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
   await touchMemberRoom(member, { lastReplyAt: new Date() });
 
   // Lead report conversation takes priority over legacy member prompts.
+  let activeLead = null;
   try {
     const { handleLeadReply, getActiveLeadSessionForMember } = await import(
       './leadReportService.js'
     );
-    const activeLead = await getActiveLeadSessionForMember(member);
+    activeLead = await getActiveLeadSessionForMember(member);
     console.log(
       `[member-room] ${member} reply "${body.slice(0, 40)}" activeLead=${activeLead?.stage || 'none'} date=${activeLead?.dateKey || '-'}`
     );
@@ -330,29 +331,34 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
       console.log(
         `[lead-report] ${member} -> status=${leadResult?.status} ack=${Boolean(leadResult?.ack)}`
       );
-      // Never fall through to old missing-review prompts while a lead report is open.
-      if (!leadResult?.ack) return;
-      try {
-        const sent = await sendMatrixMessageToRoom(roomId, leadResult.ack, {
-          kind: 'lead_report_ack',
-          member,
-          dateKey: activeLead.dateKey,
-        });
-        await logMemberRoomMessage({
-          member,
-          roomId,
-          body: leadResult.ack,
-          eventId: sent.event_id,
-          category: 'bot_dm_ack',
-          dateKey: activeLead.dateKey,
-        });
-      } catch (error) {
-        console.error(`[lead-report] Ack failed for ${member}: ${error.message}`);
+
+      if (leadResult?.ack) {
+        try {
+          const sent = await sendMatrixMessageToRoom(roomId, leadResult.ack, {
+            kind: 'lead_report_ack',
+            member,
+            dateKey: activeLead.dateKey,
+          });
+          await logMemberRoomMessage({
+            member,
+            roomId,
+            body: leadResult.ack,
+            eventId: sent.event_id,
+            category: 'bot_dm_ack',
+            dateKey: activeLead.dateKey,
+          });
+        } catch (error) {
+          console.error(`[lead-report] Ack failed for ${member}: ${error.message}`);
+        }
       }
+      // Always stop here while a lead report is open — never fall through to
+      // discussion/missing-review handlers (they would steal YES/NO replies).
       return;
     }
   } catch (error) {
     console.error(`[lead-report] Handler error for ${member}:`, error);
+    // If we know a lead session is open, do not let other handlers eat the reply.
+    if (activeLead) return;
   }
 
   // 5 PM meeting-discussion check (YES/NO) — after lead report, before legacy prompts.
@@ -539,11 +545,140 @@ export const handleMessageRedaction = async (roomId, event) => {
   }
 };
 
-/** Recent messages for one member's personal room. */
 export const getMemberRoomMessages = (roomId, limit = 20) =>
   RoomMessage.find({ roomId }).sort({ sentAt: -1 }).limit(limit);
 
+const decryptPromptSent = new Set();
+let matrixListenerRegistered = false;
+
+/**
+ * Pull recent personal-room timeline events and feed any missed member replies
+ * into the same handler as live room.message (lead YES, discussion YES/NO, etc.).
+ */
+export const reconcilePendingMemberReplies = async (client) => {
+  if (!client) return { checked: 0, processed: 0 };
+
+  const LeadReportSession = (await import('../models/LeadReportSession.js')).default;
+  const DiscussionPrompt = (await import('../models/DiscussionPrompt.js')).default;
+
+  const [leadSessions, discussionPrompts] = await Promise.all([
+    LeadReportSession.find({
+      stage: {
+        $in: [
+          'awaiting_ready',
+          'awaiting_verify',
+          'awaiting_pair_choice',
+          'awaiting_forgot_reason',
+        ],
+      },
+    })
+      .select('lead roomId reportSentAt stage dateKey')
+      .lean(),
+    DiscussionPrompt.find({ status: 'pending' })
+      .select('member roomId sentAt status reviewDateKey')
+      .lean(),
+  ]);
+
+  const targets = new Map();
+  for (const session of leadSessions) {
+    if (!session.roomId) continue;
+    targets.set(session.roomId, {
+      roomId: session.roomId,
+      member: session.lead,
+      since: session.reportSentAt ? new Date(session.reportSentAt).getTime() : 0,
+      kind: 'lead',
+    });
+  }
+  for (const prompt of discussionPrompts) {
+    if (!prompt.roomId) continue;
+    const since = prompt.sentAt ? new Date(prompt.sentAt).getTime() : 0;
+    const existing = targets.get(prompt.roomId);
+    if (!existing || since < existing.since) {
+      targets.set(prompt.roomId, {
+        roomId: prompt.roomId,
+        member: prompt.member,
+        since,
+        kind: existing ? 'both' : 'discussion',
+      });
+    }
+  }
+
+  if (!targets.size) return { checked: 0, processed: 0 };
+
+  const botUserId = await client.getUserId();
+  let processed = 0;
+
+  for (const target of targets.values()) {
+    try {
+      const res = await client.doRequest(
+        'GET',
+        `/_matrix/client/v3/rooms/${encodeURIComponent(target.roomId)}/messages`,
+        { dir: 'b', limit: 30 }
+      );
+
+      const chunk = [...(res?.chunk || [])].reverse();
+      for (const raw of chunk) {
+        let event = raw;
+        const ts = Number(event.origin_server_ts || 0);
+        if (target.since && ts && ts < target.since - 5_000) continue;
+        if (event.sender && botUserId && event.sender === botUserId) continue;
+
+        if (event.type === 'm.room.encrypted' && client.crypto) {
+          try {
+            const { EncryptedRoomEvent } = await import(
+              'matrix-bot-sdk/lib/models/events/EncryptedRoomEvent.js'
+            );
+            event = (
+              await client.crypto.decryptRoomEvent(
+                new EncryptedRoomEvent(event),
+                target.roomId
+              )
+            ).raw;
+          } catch (error) {
+            console.warn(
+              `[member-room] Reconcile decrypt failed ${target.roomId}: ${error.message}`
+            );
+            continue;
+          }
+        }
+
+        if (event?.type !== 'm.room.message') continue;
+        const body = (event.content?.body || '').trim();
+        if (!body || !event.event_id) continue;
+        if (seenEvents.has(event.event_id)) continue;
+
+        const already = await RoomMessage.exists({ eventId: event.event_id });
+        if (already) {
+          seenEvents.add(event.event_id);
+          continue;
+        }
+
+        console.log(
+          `[member-room] Reconcile processing ${target.member} "${body.slice(0, 40)}" (${target.kind})`
+        );
+        await handleIncomingMatrixMessage(target.roomId, event, botUserId);
+        processed += 1;
+      }
+    } catch (error) {
+      console.warn(
+        `[member-room] Reconcile failed for ${target.member}: ${error.message}`
+      );
+    }
+  }
+
+  if (processed) {
+    console.log(`[member-room] Reconcile processed ${processed} missed reply(ies)`);
+  }
+  return { checked: targets.size, processed };
+};
+
 export const registerMatrixRoomListener = async (client) => {
+  if (matrixListenerRegistered) {
+    console.log('Matrix room message listener already active');
+    return;
+  }
+  matrixListenerRegistered = true;
+
   const botUserId = await client.getUserId();
 
   client.on('room.invite', async (roomId) => {
@@ -562,6 +697,61 @@ export const registerMatrixRoomListener = async (client) => {
       await handleIncomingMatrixMessage(roomId, event, botUserId);
     } catch (error) {
       console.error('room.message handler error:', error.message);
+    }
+  });
+
+  // Late decryption (keys arrived after first attempt) — treat like a normal message.
+  client.on('room.decrypted_event', async (roomId, event) => {
+    try {
+      if (event?.type !== 'm.room.message') return;
+      await handleIncomingMatrixMessage(roomId, event, botUserId);
+    } catch (error) {
+      console.error('room.decrypted_event handler error:', error.message);
+    }
+  });
+
+  client.on('room.failed_decryption', async (roomId, event, err) => {
+    try {
+      console.warn(
+        `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
+      );
+      if (!isMemberRoom(roomId)) return;
+
+      const member = getMemberForRoomId(roomId);
+      if (!member) return;
+
+      const { getActiveLeadSessionForMember } = await import('./leadReportService.js');
+      const activeLead = await getActiveLeadSessionForMember(member);
+      const DiscussionPrompt = (await import('../models/DiscussionPrompt.js')).default;
+      const awaitingDiscussion = await DiscussionPrompt.exists({
+        member,
+        status: 'pending',
+      });
+
+      if (!activeLead && !awaitingDiscussion) return;
+
+      const key = `${roomId}:decrypt-prompt`;
+      if (decryptPromptSent.has(key)) return;
+      decryptPromptSent.add(key);
+      setTimeout(() => decryptPromptSent.delete(key), 10 * 60 * 1000);
+
+      const hint =
+        'I could not read your last message (encryption). Please send your reply again as plain text (e.g. YES).';
+      const sent = await sendMatrixMessageToRoom(roomId, hint, {
+        kind: 'decrypt_retry_prompt',
+        member,
+        dateKey: activeLead?.dateKey || null,
+      });
+      await logMemberRoomMessage({
+        member,
+        roomId,
+        body: hint,
+        eventId: sent.event_id,
+        category: 'bot_dm_ack',
+        dateKey: activeLead?.dateKey || null,
+      });
+    } catch (error) {
+      console.error('room.failed_decryption handler error:', error.message);
     }
   });
 

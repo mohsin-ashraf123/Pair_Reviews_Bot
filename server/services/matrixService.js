@@ -267,6 +267,13 @@ const createEncryptedClient = async (session) => {
     cryptoStore
   );
 
+  // Register BEFORE start() so initial sync / catch-up events are not dropped.
+  // Previously the listener was attached after start + 5s sleep + crypto warm,
+  // so lead/discussion YES replies during that window (or on redeploy catch-up)
+  // never reached handleMemberRoomEvent — session stayed on awaiting_ready.
+  await initMemberMap(client);
+  await registerMatrixRoomListener(client);
+
   try {
     await client.start();
   } catch (error) {
@@ -336,8 +343,6 @@ const createEncryptedClient = async (session) => {
   }
 
   activeClient = client;
-  await initMemberMap(client);
-  await registerMatrixRoomListener(client);
   console.log('Matrix E2EE client ready');
 
   if (session?.deviceId) {
@@ -345,7 +350,27 @@ const createEncryptedClient = async (session) => {
   }
   scheduleMatrixDevicePersist();
 
+  // Catch replies missed during decrypt lag / redeploy (e.g. lead YES).
+  const { reconcilePendingMemberReplies } = await import('./roomMessageService.js');
+  reconcilePendingMemberReplies(client).catch((error) =>
+    console.warn(`[member-room] Startup reconcile failed: ${error.message}`)
+  );
+  scheduleMemberReplyReconcile(client);
+
   return client;
+};
+
+let reconcileTimer = null;
+const scheduleMemberReplyReconcile = (client) => {
+  if (reconcileTimer) return;
+  reconcileTimer = setInterval(() => {
+    import('./roomMessageService.js')
+      .then(({ reconcilePendingMemberReplies }) =>
+        reconcilePendingMemberReplies(client)
+      )
+      .catch(() => {});
+  }, 45_000);
+  if (typeof reconcileTimer.unref === 'function') reconcileTimer.unref();
 };
 
 const scheduleMatrixDevicePersist = () => {
