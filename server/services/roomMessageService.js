@@ -567,6 +567,7 @@ export const reconcilePendingMemberReplies = async (client) => {
         $in: [
           'awaiting_ready',
           'awaiting_verify',
+          'awaiting_momin_check',
           'awaiting_pair_choice',
           'awaiting_forgot_reason',
         ],

@@ -136,6 +136,24 @@ export const formatSinglePairVerifyQuestion = async (
   return lines.join('\n');
 };
 
+/** After each pair verify — lead confirms Momin Sir’s cross-pair duty. */
+export const formatMominCheckQuestion = (pair, index, total) =>
+  [
+    `Momin check ${index + 1}/${total}: ${formatPairLabel(pair)}`,
+    '',
+    'Did Momin Sir do cross-pair testing and review logging for this pair?',
+    '',
+    'Reply: YES or NO',
+  ].join('\n');
+
+const ACTIVE_LEAD_STAGES = [
+  'awaiting_ready',
+  'awaiting_verify',
+  'awaiting_momin_check',
+  'awaiting_pair_choice',
+  'awaiting_forgot_reason',
+];
+
 /** Full review body for one pair — used by dashboard previews too. */
 export const formatSubmittedReviewsBlock = async (dateKey, submittedPairs) => {
   if (!submittedPairs.length) {
@@ -207,6 +225,9 @@ export const formatForgotReasonQuestion = (pair) =>
 export const formatLeadReportComplete = (session) => {
   const verified = (session.verifyDecisions || []).filter((d) => d.verified).length;
   const totalVerified = (session.verifyDecisions || []).length;
+  const mominDone = (session.verifyDecisions || []).filter(
+    (d) => d.mominCrossChecked === true
+  ).length;
   const missingLines = (session.pairDecisions || []).map((decision) => {
     const reason = decision.forgotReason
       ? `${decision.label} — reason: ${decision.forgotReason}`
@@ -219,6 +240,9 @@ export const formatLeadReportComplete = (session) => {
     '',
     totalVerified
       ? `Verified reviews: ${verified}/${totalVerified}`
+      : null,
+    totalVerified
+      ? `Momin cross-pair checks: ${mominDone}/${totalVerified}`
       : null,
     missingLines.length
       ? ['Missing pairs:', '', ...missingLines].join('\n')
@@ -492,6 +516,7 @@ export const startLeadMorningReport = async (
   if (force) {
     session.pairDecisions = [];
     session.verifyDecisions = [];
+    session.pendingVerify = undefined;
     session.reviewsVerified = null;
   }
   await session.save();
@@ -565,33 +590,33 @@ const askAboutCurrentSubmittedPair = async (session) => {
   return { status: 'awaiting_verify', ack: null };
 };
 
+const askMominCheckForCurrentPair = async (session) => {
+  const submitted = session.submittedPairs || [];
+  const pair =
+    session.pendingVerify?.pair || submitted[session.currentVerifyIndex];
+  const index = session.currentVerifyIndex || 0;
+  session.stage = 'awaiting_momin_check';
+  await session.save();
+
+  const question = formatMominCheckQuestion(pair, index, submitted.length);
+  await sendToLead(session, question, 'bot_dm_prompt');
+  emitMemberRoomUpdate({ dateKey: session.dateKey, leadReport: session.toObject() });
+  return { status: 'awaiting_momin_check', ack: null };
+};
+
 /** Handle a reply in the lead's personal room for an active report session. */
 export const handleLeadReply = async (member, roomId, body, eventId) => {
   // Prefer the active session for this lead; don't require exact roomId match
   // (stale roomId on the doc must not fall through to legacy member prompts).
   let session = await LeadReportSession.findOne({
     lead: member,
-    stage: {
-      $in: [
-        'awaiting_ready',
-        'awaiting_verify',
-        'awaiting_pair_choice',
-        'awaiting_forgot_reason',
-      ],
-    },
+    stage: { $in: ACTIVE_LEAD_STAGES },
   }).sort({ updatedAt: -1 });
 
   if (!session && roomId) {
     session = await LeadReportSession.findOne({
       roomId,
-      stage: {
-        $in: [
-          'awaiting_ready',
-          'awaiting_verify',
-          'awaiting_pair_choice',
-          'awaiting_forgot_reason',
-        ],
-      },
+      stage: { $in: ACTIVE_LEAD_STAGES },
     }).sort({ updatedAt: -1 });
   }
 
@@ -613,6 +638,7 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
 
     session.currentVerifyIndex = 0;
     session.verifyDecisions = [];
+    session.pendingVerify = undefined;
     await session.save();
 
     if ((session.submittedPairs || []).length) {
@@ -633,13 +659,40 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
     }
 
     const pair = (session.submittedPairs || [])[session.currentVerifyIndex];
+    if (!pair) {
+      return askAboutCurrentPair(session);
+    }
+
+    session.pendingVerify = {
+      pair,
+      verified: answer === 'yes',
+    };
+    session.markModified('pendingVerify');
+    await session.save();
+    return askMominCheckForCurrentPair(session);
+  }
+
+  if (session.stage === 'awaiting_momin_check') {
+    const answer = parseYesNo(body);
+    if (!answer) {
+      return {
+        status: 'invalid',
+        ack: 'Please reply YES or NO — did Momin Sir do cross-pair testing for this pair?',
+      };
+    }
+
+    const pending = session.pendingVerify;
+    const pair =
+      pending?.pair || (session.submittedPairs || [])[session.currentVerifyIndex];
     if (pair) {
       session.verifyDecisions.push({
         pair,
-        verified: answer === 'yes',
+        verified: pending ? Boolean(pending.verified) : true,
+        mominCrossChecked: answer === 'yes',
         decidedAt: new Date(),
       });
     }
+    session.pendingVerify = undefined;
     session.currentVerifyIndex += 1;
     await session.save();
     return askAboutCurrentSubmittedPair(session);
@@ -762,12 +815,5 @@ export const getLeadReportSummary = async (dateKey) => {
 export const getActiveLeadSessionForMember = (member) =>
   LeadReportSession.findOne({
     lead: member,
-    stage: {
-      $in: [
-        'awaiting_ready',
-        'awaiting_verify',
-        'awaiting_pair_choice',
-        'awaiting_forgot_reason',
-      ],
-    },
+    stage: { $in: ACTIVE_LEAD_STAGES },
   }).sort({ updatedAt: -1 });

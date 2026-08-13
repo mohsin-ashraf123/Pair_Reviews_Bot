@@ -311,6 +311,7 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
     const {
       formatLeadReportKickoff,
       formatSinglePairVerifyQuestion,
+      formatMominCheckQuestion,
       formatPairChoiceQuestion,
       formatForgotReasonQuestion,
     } = await import('../services/leadReportService.js');
@@ -324,6 +325,7 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
         $in: [
           'awaiting_ready',
           'awaiting_verify',
+          'awaiting_momin_check',
           'awaiting_pair_choice',
           'awaiting_forgot_reason',
         ],
@@ -346,6 +348,18 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
       }
       message = await formatSinglePairVerifyQuestion(
         session.dateKey,
+        pair,
+        session.currentVerifyIndex || 0,
+        (session.submittedPairs || []).length
+      );
+    } else if (session.stage === 'awaiting_momin_check') {
+      const pair =
+        session.pendingVerify?.pair ||
+        (session.submittedPairs || [])[session.currentVerifyIndex || 0];
+      if (!pair) {
+        return res.status(400).json({ message: 'No pair left for Momin check' });
+      }
+      message = formatMominCheckQuestion(
         pair,
         session.currentVerifyIndex || 0,
         (session.submittedPairs || []).length
@@ -520,11 +534,8 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
     if (driveReplies && !report.skipped) {
       await reply('YES', 'ready');
       let session = await LeadReportSession.findOne({ dateKey: yesterdayKey });
-      if (session?.stage === 'awaiting_verify') {
-        await reply('YES', 'verify');
-      }
 
-      for (let i = 0; i < 12; i += 1) {
+      for (let i = 0; i < 24; i += 1) {
         session = await LeadReportSession.findOne({ dateKey: yesterdayKey });
         if (!session || session.stage === 'completed') break;
 
@@ -549,6 +560,11 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
 
         if (session.stage === 'awaiting_verify') {
           await reply('YES', 'verify_retry');
+          continue;
+        }
+
+        if (session.stage === 'awaiting_momin_check') {
+          await reply('YES', 'momin_check_retry');
           continue;
         }
 

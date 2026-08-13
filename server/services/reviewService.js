@@ -208,18 +208,9 @@ export const getSubmittedPairs = (pairs = [], reviewedMembers = []) => {
   return pairs.filter((pair) => pair.some((member) => reviewed.has(member)));
 };
 
-export const formatReminderMessage = (lead, pendingPairs) => {
-  const lines = pendingPairs.map((pair) => pair.join(' + '));
-  return [
-    '🔔 Review Reminder',
-    '',
-    'Pending Reviews',
-    '',
-    ...lines,
-    '',
-    `${lead} – Please make sure all reviews are completed and collected today.`,
-  ].join('\n');
-};
+/** Short evening nudge in the main room (lead still gets a personal DM). */
+export const formatReminderMessage = (_lead, _pendingPairs) =>
+  ['🔔 Review Reminder', 'Please submit your reviews'].join('\n');
 
 /**
  * `responseByPair` maps a sorted pair key to the follow-up answer collected

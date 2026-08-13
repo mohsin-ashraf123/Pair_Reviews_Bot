@@ -18,6 +18,8 @@ const verifyDecisionSchema = new mongoose.Schema(
   {
     pair: [String],
     verified: Boolean,
+    /** Did Momin Sir do cross-pair testing / review logging for this pair? */
+    mominCrossChecked: { type: Boolean, default: null },
     decidedAt: Date,
   },
   { _id: false }
@@ -56,8 +58,8 @@ const leadReportSessionSchema = new mongoose.Schema(
     reportEventId: String,
 
     /**
-     * idle → awaiting_ready → awaiting_verify → awaiting_pair_choice
-     *   → awaiting_forgot_reason → completed
+     * idle → awaiting_ready → awaiting_verify → awaiting_momin_check
+     *   → awaiting_pair_choice → awaiting_forgot_reason → completed
      */
     stage: {
       type: String,
@@ -65,6 +67,7 @@ const leadReportSessionSchema = new mongoose.Schema(
         'idle',
         'awaiting_ready',
         'awaiting_verify',
+        'awaiting_momin_check',
         'awaiting_pair_choice',
         'awaiting_forgot_reason',
         'completed',
@@ -75,6 +78,11 @@ const leadReportSessionSchema = new mongoose.Schema(
     /** Index into submittedPairs while verifying one-by-one. */
     currentVerifyIndex: { type: Number, default: 0 },
     verifyDecisions: { type: [verifyDecisionSchema], default: [] },
+    /** After verify YES/NO, hold answer until Momin cross-pair check is answered. */
+    pendingVerify: {
+      pair: [String],
+      verified: Boolean,
+    },
 
     currentPairIndex: { type: Number, default: 0 },
     currentPairOptions: { type: [pairOptionSchema], default: [] },

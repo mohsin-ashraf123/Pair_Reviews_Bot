@@ -14,6 +14,7 @@ const STAGE_LABELS = {
   idle: 'Not started',
   awaiting_ready: 'Awaiting ready',
   awaiting_verify: 'Verifying reviews',
+  awaiting_momin_check: 'Momin cross-pair check',
   awaiting_pair_choice: 'Missing-pair answers',
   awaiting_forgot_reason: 'Awaiting forgot reason',
   completed: 'Completed',

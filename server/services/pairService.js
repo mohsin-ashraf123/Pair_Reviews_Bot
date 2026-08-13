@@ -258,6 +258,10 @@ export const getActivePreviewTarget = (date = new Date()) => {
 
 export const formatPairLine = (pair) => pair.join(' + ');
 
+/** Static Momin duty line on every daily pairs post (lead line below rotates). */
+export const MOMIN_DUTY_LINE =
+  'Momin: cross-pair testing and review logging.';
+
 export const formatDailyMessage = (pairsData) => {
   const lines = pairsData.allPairs.map(formatPairLine);
   return [
@@ -265,7 +269,8 @@ export const formatDailyMessage = (pairsData) => {
     '',
     ...lines,
     '',
-    `${pairsData.lead} will make sure all above today`,
+    MOMIN_DUTY_LINE,
+    `${pairsData.lead}: ensure completion of the above today.`,
   ].join('\n');
 };
 

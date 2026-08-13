@@ -20,6 +20,7 @@ import {
   formatLeadReportKickoff,
   formatPairChoiceQuestion,
   formatSinglePairVerifyQuestion,
+  formatMominCheckQuestion,
   buildLeadPairOptions,
   getLeadReportSummary,
 } from './leadReportService.js';
@@ -129,6 +130,11 @@ const buildScheduledMessagesInfo = async () => {
         label: `2 · Verify submitted ${i + 1}/${submitted.length}`,
         to: lead,
         body,
+      });
+      leadFollowUps.messages.push({
+        label: `2b · Momin check ${i + 1}/${submitted.length}`,
+        to: lead,
+        body: formatMominCheckQuestion(submitted[i], i, submitted.length),
       });
     });
 
