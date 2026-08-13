@@ -12,7 +12,10 @@ import { startPairScheduler } from './services/schedulerService.js';
 import { warmMatrixClient } from './services/matrixService.js';
 import { initSocketServer } from './services/socketService.js';
 import { seedMemberRooms, joinMemberRooms } from './services/memberRoomService.js';
-import { joinBossRoom } from './services/bossReportService.js';
+import {
+  joinBossRoom,
+  healDeliveredBossReports,
+} from './services/bossReportService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '../client/dist');
@@ -78,6 +81,19 @@ const start = async () => {
         'Matrix bot client skipped (ENABLE_CRON_SCHEDULER=false) — Element session sirf Railway pe chalega, local se naya login nahi.'
       );
     }
+
+    // Fix reports that were delivered but later mislabeled "failed".
+    await healDeliveredBossReports()
+      .then((r) => {
+        if (r?.modifiedCount) {
+          console.log(
+            `[boss] Healed ${r.modifiedCount} delivered report(s) stuck as failed`
+          );
+        }
+      })
+      .catch((error) =>
+        console.warn(`[boss] Heal skipped: ${error.message}`)
+      );
 
     startPairScheduler();
   } catch (error) {

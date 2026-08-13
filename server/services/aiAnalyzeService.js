@@ -335,7 +335,7 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
     /** Exact text already sent (or prepared) for Ayaaz Sir — for AI page display. */
     sirReport: bossDoc
       ? {
-          status: bossDoc.status,
+          status: bossDoc.eventId ? 'sent' : bossDoc.status,
           brief: bossDoc.brief || '',
           sentAt: bossDoc.sentAt || null,
           preparedAt: bossDoc.preparedAt || null,
@@ -377,11 +377,15 @@ export const getSirReportForReviewDay = async (dateKeyInput) => {
       sirReport: null,
     };
   }
+
+  // eventId means it already went to Sir — surface as sent even if DB was mislabeled.
+  const status = doc.eventId ? 'sent' : doc.status;
+
   return {
     reviewDateKey,
     reviewDateLabel: formatDisplayDate(reviewDateKey),
     sirReport: {
-      status: doc.status,
+      status,
       brief: doc.brief || '',
       sentAt: doc.sentAt || null,
       preparedAt: doc.preparedAt || null,

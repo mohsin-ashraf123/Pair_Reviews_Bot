@@ -122,12 +122,15 @@ function ReviewDayDropdown({
   );
 }
 
-function sirStatusLabel(status) {
-  if (status === 'sent') return 'Sent to Ayaaz Sir';
-  if (status === 'ready') return 'Prepared (not sent yet)';
-  if (status === 'preparing') return 'Preparing…';
-  if (status === 'failed') return 'Send failed';
-  return status || '—';
+function sirStatusLabel(sirReport) {
+  // eventId means Matrix delivery already happened — never show Failed.
+  if (sirReport?.eventId || sirReport?.status === 'sent') {
+    return 'Sent to Ayaaz Sir';
+  }
+  if (sirReport?.status === 'ready') return 'Prepared (not sent yet)';
+  if (sirReport?.status === 'preparing') return 'Preparing…';
+  if (sirReport?.status === 'failed') return 'Send failed';
+  return sirReport?.status || '—';
 }
 
 function AiAnalyzed() {
@@ -271,7 +274,7 @@ function AiAnalyzed() {
         <div className="ai-result ai-sir-sent">
           <div className="ai-brief-card">
             <div className="ai-brief-head">
-              <h3>{sirStatusLabel(sirReport.status)}</h3>
+              <h3>{sirStatusLabel(sirReport)}</h3>
               <button
                 type="button"
                 className="ai-copy-btn"
