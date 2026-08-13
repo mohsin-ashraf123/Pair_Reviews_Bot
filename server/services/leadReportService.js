@@ -8,11 +8,9 @@ import { sendMatrixMessageToRoom } from './matrixService.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate, emitReviewUpdate } from './socketService.js';
+import { parseYesNo } from './yesNoParse.js';
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-
-const yesRe = /^(y|yes|yeah|yep|haan|han|ha|ok|okay|ready|ji)\b/i;
-const noRe = /^(n|no|nah|nope|nahi|nai)\b/i;
 
 const formatPairLabel = (pair = []) => pair.join(' + ');
 
@@ -252,13 +250,6 @@ export const formatLeadReportComplete = (session) => {
   ]
     .filter((line) => line !== null)
     .join('\n');
-};
-
-const parseYesNo = (body) => {
-  const trimmed = (body || '').trim();
-  if (yesRe.test(trimmed)) return 'yes';
-  if (noRe.test(trimmed)) return 'no';
-  return null;
 };
 
 /**

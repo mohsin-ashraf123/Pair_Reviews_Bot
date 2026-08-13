@@ -10,6 +10,7 @@ import {
   sendMatrixMessageToRoom,
   joinMatrixRoom,
 } from './matrixService.js';
+import { logOutgoingMessage } from './roomMessageService.js';
 import {
   claimCronJob,
   completeCronJob,
@@ -199,6 +200,14 @@ export const sendBossDailyReport = async (triggeredBy = 'cron') => {
     doc.roomId = roomId;
     doc.sendError = null;
     await doc.save();
+
+    // Persist for History + AI Analyzed pages (same text Sir received).
+    await logOutgoingMessage(doc.brief, result.event_id, 'bot_boss', {
+      dateKey: reviewDateKey,
+      roomId,
+    }).catch((error) =>
+      console.warn(`[boss] History log failed: ${error.message}`)
+    );
 
     if (triggeredBy === 'cron') {
       await completeCronJob(jobKey, result.event_id);

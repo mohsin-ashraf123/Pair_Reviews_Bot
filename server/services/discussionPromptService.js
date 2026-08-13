@@ -13,23 +13,14 @@ import { sendMatrixMessageToRoom } from './matrixService.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate } from './socketService.js';
+import { parseYesNo } from './yesNoParse.js';
 
 const NO_ISSUES_RE =
   /review\s+completed\.?\s*no\s+issues,\s*concerns,\s*or\s+improvement\s+recommendations\s+identified/i;
 
-const yesRe = /^(y|yes|yeah|yep|haan|han|ha|ok|okay|ji)\b/i;
-const noRe = /^(n|no|nah|nope|nahi|nai)\b/i;
-
 const formatPairLabel = (pair = []) => pair.join(' + ');
 
 export const isNoIssuesReview = (body = '') => NO_ISSUES_RE.test(String(body).trim());
-
-const parseYesNo = (body) => {
-  const trimmed = (body || '').trim();
-  if (yesRe.test(trimmed)) return 'yes';
-  if (noRe.test(trimmed)) return 'no';
-  return null;
-};
 
 const isQaPair = (pair = []) => {
   const qa = new Set(config.qaTeam || []);

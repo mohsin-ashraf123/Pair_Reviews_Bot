@@ -38,6 +38,9 @@ function noticeMeta(category) {
   if (category === 'bot_duplicate') {
     return { label: 'Duplicate', tone: 'muted' };
   }
+  if (category === 'bot_boss') {
+    return { label: 'Ayaaz Sir report', tone: 'warn' };
+  }
   return { label: 'Notice', tone: 'muted' };
 }
 
@@ -57,6 +60,8 @@ function failureKindLabel(kind) {
       return 'Discussion';
     case 'lead_report':
       return 'Lead report';
+    case 'boss_daily_report':
+      return 'Ayaaz Sir report';
     case 'lead_report_ack':
     case 'discussion_ack':
     case 'missing_review_ack':

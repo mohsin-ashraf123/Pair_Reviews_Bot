@@ -293,6 +293,17 @@
   max-width: 760px;
 }
 
+.ai-sir-sent {
+  padding-bottom: 0;
+}
+
+.ai-sir-meta {
+  margin: 0;
+  padding: 0 0.9rem 0.55rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .ai-result-meta {
   display: flex;
   flex-wrap: wrap;

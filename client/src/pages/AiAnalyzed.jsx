@@ -122,14 +122,24 @@ function ReviewDayDropdown({
   );
 }
 
+function sirStatusLabel(status) {
+  if (status === 'sent') return 'Sent to Ayaaz Sir';
+  if (status === 'ready') return 'Prepared (not sent yet)';
+  if (status === 'preparing') return 'Preparing…';
+  if (status === 'failed') return 'Send failed';
+  return status || '—';
+}
+
 function AiAnalyzed() {
   const [dates, setDates] = useState([]);
   const [dateKey, setDateKey] = useState('');
   const [loadingDates, setLoadingDates] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
+  const [sirReport, setSirReport] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedSir, setCopiedSir] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +166,27 @@ function AiAnalyzed() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!dateKey) {
+      setSirReport(null);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/ai/sir-report`, {
+          params: { dateKey },
+        });
+        if (!cancelled) setSirReport(res.data?.sirReport || null);
+      } catch {
+        if (!cancelled) setSirReport(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dateKey]);
+
   const handleAnalyze = async () => {
     if (!dateKey) return;
     setAnalyzing(true);
@@ -164,6 +195,7 @@ function AiAnalyzed() {
     try {
       const res = await axios.post(`${API}/ai/analyze`, { dateKey });
       setResult(res.data);
+      if (res.data?.sirReport) setSirReport(res.data.sirReport);
     } catch (err) {
       setResult(null);
       setError(
@@ -180,6 +212,17 @@ function AiAnalyzed() {
       await navigator.clipboard.writeText(result.brief);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError('Could not copy to clipboard');
+    }
+  };
+
+  const handleCopySir = async () => {
+    if (!sirReport?.brief) return;
+    try {
+      await navigator.clipboard.writeText(sirReport.brief);
+      setCopiedSir(true);
+      setTimeout(() => setCopiedSir(false), 1800);
     } catch {
       setError('Could not copy to clipboard');
     }
@@ -224,7 +267,35 @@ function AiAnalyzed() {
 
       {error && <p className="ai-page-error">{error}</p>}
 
-      {!result && !analyzing && !error && (
+      {sirReport?.brief && (
+        <div className="ai-result ai-sir-sent">
+          <div className="ai-brief-card">
+            <div className="ai-brief-head">
+              <h3>{sirStatusLabel(sirReport.status)}</h3>
+              <button
+                type="button"
+                className="ai-copy-btn"
+                onClick={handleCopySir}
+              >
+                {copiedSir ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <p className="ai-sir-meta">
+              {sirReport.status === 'sent' && sirReport.sentAt
+                ? `Delivered ${new Date(sirReport.sentAt).toLocaleString('en-PK')}`
+                : sirReport.preparedAt
+                  ? `Prepared ${new Date(sirReport.preparedAt).toLocaleString('en-PK')}`
+                  : 'Saved for Ayaaz Sir'}
+              {sirReport.modelName || sirReport.modelId
+                ? ` · ${sirReport.modelName || sirReport.modelId}`
+                : ''}
+            </p>
+            <pre className="ai-brief-text">{sirReport.brief}</pre>
+          </div>
+        </div>
+      )}
+
+      {!result && !analyzing && !error && !sirReport?.brief && (
         <div className="ai-empty">
           <p>
             Pick a review day and hit Analyze. Builds a clean report for Sir
@@ -258,7 +329,7 @@ function AiAnalyzed() {
 
           <div className="ai-brief-card">
             <div className="ai-brief-head">
-              <h3>Sir report</h3>
+              <h3>Fresh analysis</h3>
               <button type="button" className="ai-copy-btn" onClick={handleCopy}>
                 {copied ? 'Copied' : 'Copy'}
               </button>

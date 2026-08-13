@@ -2,6 +2,7 @@ import DiscussionPrompt from '../models/DiscussionPrompt.js';
 import LeadReportSession from '../models/LeadReportSession.js';
 import RoomMessage from '../models/RoomMessage.js';
 import DailyReview from '../models/DailyReview.js';
+import BossDailyReport from '../models/BossDailyReport.js';
 import { config } from '../config/appConfig.js';
 import {
   formatDisplayDate,
@@ -275,7 +276,7 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
     throw err;
   }
 
-  const [leadDetail, discussions, reviews] = await Promise.all([
+  const [leadDetail, discussions, reviews, bossDoc] = await Promise.all([
     getLeadReportDetail(reviewDateKey),
     DiscussionPrompt.find({
       $or: [{ reviewDateKey }, { meetingDateKey }],
@@ -283,6 +284,7 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
       .sort({ member: 1 })
       .lean(),
     loadSubmittedReviews(reviewDateKey),
+    BossDailyReport.findOne({ reviewDateKey }).lean(),
   ]);
 
   const leadBlock = formatLeadBlock(leadDetail);
@@ -330,6 +332,18 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
     modelId: settings.modelId,
     modelName: settings.modelName || settings.modelId,
     brief,
+    /** Exact text already sent (or prepared) for Ayaaz Sir — for AI page display. */
+    sirReport: bossDoc
+      ? {
+          status: bossDoc.status,
+          brief: bossDoc.brief || '',
+          sentAt: bossDoc.sentAt || null,
+          preparedAt: bossDoc.preparedAt || null,
+          eventId: bossDoc.eventId || null,
+          modelId: bossDoc.modelId || null,
+          modelName: bossDoc.modelName || null,
+        }
+      : null,
     sources: {
       lead: leadDetail.lead || null,
       leadStage:
@@ -351,12 +365,39 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
   };
 };
 
+/** Load the Sir report for a review day without re-running AI. */
+export const getSirReportForReviewDay = async (dateKeyInput) => {
+  const reviewDateKey =
+    dateKeyInput || getPreviousWorkingDay(getKarachiDateKey());
+  const doc = await BossDailyReport.findOne({ reviewDateKey }).lean();
+  if (!doc) {
+    return {
+      reviewDateKey,
+      reviewDateLabel: formatDisplayDate(reviewDateKey),
+      sirReport: null,
+    };
+  }
+  return {
+    reviewDateKey,
+    reviewDateLabel: formatDisplayDate(reviewDateKey),
+    sirReport: {
+      status: doc.status,
+      brief: doc.brief || '',
+      sentAt: doc.sentAt || null,
+      preparedAt: doc.preparedAt || null,
+      eventId: doc.eventId || null,
+      modelId: doc.modelId || null,
+      modelName: doc.modelName || null,
+    },
+  };
+};
+
 /** Review days available for analysis. */
 export const listAnalyzeDates = async (limit = 40) => {
   const todayKey = getKarachiDateKey();
   const defaultReviewKey = getPreviousWorkingDay(todayKey);
 
-  const [leadKeys, discussionReviewKeys, dailyKeys] = await Promise.all([
+  const [leadKeys, discussionReviewKeys, dailyKeys, bossKeys] = await Promise.all([
     LeadReportSession.find({})
       .select('dateKey')
       .sort({ dateKey: -1 })
@@ -375,6 +416,12 @@ export const listAnalyzeDates = async (limit = 40) => {
       .limit(limit)
       .lean()
       .then((rows) => rows.map((r) => r.dateKey)),
+    BossDailyReport.find({})
+      .select('reviewDateKey')
+      .sort({ reviewDateKey: -1 })
+      .limit(limit)
+      .lean()
+      .then((rows) => rows.map((r) => r.reviewDateKey).filter(Boolean)),
   ]);
 
   const items = [
@@ -384,6 +431,7 @@ export const listAnalyzeDates = async (limit = 40) => {
       ...leadKeys,
       ...discussionReviewKeys,
       ...dailyKeys,
+      ...bossKeys,
     ]),
   ]
     .filter(Boolean)

@@ -45,6 +45,9 @@ const classifyBotMessage = (body) => {
   if (body.startsWith('Yesterday (')) return 'bot_missed';
   if (body.startsWith('⚠️ Wrong Pair Review')) return 'bot_wrong_pair';
   if (body.startsWith('⚠️ Duplicate Pair Review')) return 'bot_duplicate';
+  if (body.startsWith('📋 **Pair Review Report') || body.startsWith('📋 Pair Review Report')) {
+    return 'bot_boss';
+  }
   return 'bot_other';
 };
 

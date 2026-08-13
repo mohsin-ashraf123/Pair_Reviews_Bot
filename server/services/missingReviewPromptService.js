@@ -547,16 +547,35 @@ export const sendPartialQaMissingPrompt = async ({
 
 /** Handle a member's reply inside their personal room. */
 export const handleMemberReply = async (member, roomId, body, eventId) => {
-  const prompt = await MissingReviewPrompt.findOne({
+  // Only open (pending) prompts — never spam "already replied" on chit-chat
+  // after a meeting-check YES (that was matching old answered Aug prompts).
+  let prompt = await MissingReviewPrompt.findOne({
     member,
     roomId,
-    status: { $in: ['pending', 'answered'] },
+    status: 'pending',
   }).sort({ sentAt: -1 });
 
-  if (!prompt) return { status: 'no_prompt' };
+  if (!prompt) {
+    prompt = await MissingReviewPrompt.findOne({
+      member,
+      status: 'pending',
+    }).sort({ sentAt: -1 });
+  }
 
-  if (prompt.status === 'answered') {
-    return { status: 'already_answered', prompt, ack: formatAlreadyAnsweredAck(prompt) };
+  if (!prompt) {
+    // If they send a letter for a recently answered prompt, remind once.
+    const recent = await MissingReviewPrompt.findOne({
+      member,
+      status: 'answered',
+    }).sort({ sentAt: -1 });
+    if (recent?.options?.length && parsePromptReply(body, recent.options)) {
+      return {
+        status: 'already_answered',
+        prompt: recent,
+        ack: formatAlreadyAnsweredAck(recent),
+      };
+    }
+    return { status: 'no_prompt' };
   }
 
   const option = parsePromptReply(body, prompt.options);

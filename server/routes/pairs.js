@@ -36,6 +36,7 @@ import {
 import {
   analyzeMeetingDay,
   listAnalyzeDates,
+  getSirReportForReviewDay,
 } from '../services/aiAnalyzeService.js';
 
 const router = express.Router();
@@ -144,18 +145,55 @@ router.get('/history', async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const { getBotSendFailures } = await import('../services/botSendLogService.js');
 
-    const [pairs, botNotices, reviews, failures] = await Promise.all([
+    const BossDailyReport = (await import('../models/BossDailyReport.js')).default;
+
+    const [pairs, botNotices, reviews, failures, bossDocs] = await Promise.all([
       getMessageHistory(limit),
       RoomMessage.find({
-        category: { $in: ['bot_reminder', 'bot_missed', 'bot_wrong_pair', 'bot_duplicate'] },
+        category: {
+          $in: [
+            'bot_reminder',
+            'bot_missed',
+            'bot_wrong_pair',
+            'bot_duplicate',
+            'bot_boss',
+          ],
+        },
       })
         .sort({ sentAt: -1 })
         .limit(limit),
       getArchivedReviewMessages(limit),
       getBotSendFailures(limit),
+      BossDailyReport.find({ status: 'sent', brief: { $ne: '' } })
+        .sort({ sentAt: -1 })
+        .limit(limit)
+        .lean(),
     ]);
 
-    res.json({ pairs, botNotices, reviews, failures });
+    // Merge Sir reports from BossDailyReport if not already logged as RoomMessage.
+    const noticeEventIds = new Set(
+      (botNotices || []).map((n) => n.eventId).filter(Boolean)
+    );
+    const bossNotices = (bossDocs || [])
+      .filter((d) => d.brief && (!d.eventId || !noticeEventIds.has(d.eventId)))
+      .map((d) => ({
+        _id: d._id,
+        eventId: d.eventId || `boss-${d.reviewDateKey}`,
+        dateKey: d.reviewDateKey,
+        body: d.brief,
+        category: 'bot_boss',
+        sentAt: d.sentAt || d.updatedAt,
+        roomId: d.roomId,
+        senderName: 'Chat Bot',
+        direction: 'out',
+      }));
+
+    res.json({
+      pairs,
+      botNotices: [...(botNotices || []), ...bossNotices],
+      reviews,
+      failures,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -688,6 +726,19 @@ router.post('/ai/models', async (req, res) => {
 router.get('/ai/analyze/dates', async (req, res) => {
   try {
     res.json(await listAnalyzeDates(Number(req.query.limit) || 40));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/** Exact message prepared/sent to Ayaaz Sir for a review day (no AI re-run). */
+router.get('/ai/sir-report', async (req, res) => {
+  try {
+    const dateKey =
+      typeof req.query?.dateKey === 'string' && req.query.dateKey.trim()
+        ? req.query.dateKey.trim()
+        : undefined;
+    res.json(await getSirReportForReviewDay(dateKey));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
