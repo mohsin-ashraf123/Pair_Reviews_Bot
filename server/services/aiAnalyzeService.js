@@ -10,6 +10,7 @@ import {
   getPreviousWorkingDay,
   addCalendarDays,
   isWeekend,
+  isNonWorkingDay,
 } from './pairService.js';
 import { getLeadReportDetail } from './leadReportViewService.js';
 import { buildPairKey, getSubmittedPairs } from './reviewService.js';
@@ -30,7 +31,7 @@ const personalRoomIds = () =>
 /** Next Mon–Fri after dateKey. */
 const getNextWorkingDay = (dateKey) => {
   let current = addCalendarDays(dateKey, 1);
-  while (isWeekend(current)) {
+  while (isNonWorkingDay(current)) {
     current = addCalendarDays(current, 1);
   }
   return current;

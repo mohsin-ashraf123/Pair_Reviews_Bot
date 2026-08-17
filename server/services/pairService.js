@@ -1,4 +1,5 @@
 import { config } from '../config/appConfig.js';
+import { isHoliday } from './holidayService.js';
 
 /** Daily send time comes from CRON_SCHEDULE so previews stay in sync with cron. */
 const parseCronTime = (expression, fallbackHour, fallbackMinute) => {
@@ -77,23 +78,23 @@ export const addCalendarDays = (dateKey, days) => {
   return `${y}-${m}-${d}`;
 };
 
-/** Advance dateKey by N working days (skips Sat/Sun). */
+/** Advance dateKey by N working days (skips Sat/Sun + configured holidays). */
 export const addWorkingDays = (dateKey, days) => {
   let current = dateKey;
   let remaining = days;
   while (remaining > 0) {
     current = addCalendarDays(current, 1);
-    if (!isWeekend(current)) remaining--;
+    if (!isNonWorkingDay(current)) remaining--;
   }
   return current;
 };
 
-/** Previous working day before dateKey. */
+/** Previous working day before dateKey (skips weekends + holidays). */
 export const getPreviousWorkingDay = (dateKey) => {
   let current = dateKey;
   do {
     current = addCalendarDays(current, -1);
-  } while (isWeekend(current));
+  } while (isNonWorkingDay(current));
   return current;
 };
 
@@ -105,7 +106,7 @@ export const getPreviousWorkingDay = (dateKey) => {
 export const getFollowUpTargetDateKey = (date = new Date()) => {
   const todayKey = getKarachiDateKey(date);
   const runDone =
-    !isWeekend(todayKey) &&
+    !isNonWorkingDay(todayKey) &&
     isPastCronTimeToday(config.missingReviewPromptCronSchedule, 10, 50, date);
 
   return runDone ? todayKey : getPreviousWorkingDay(todayKey);
@@ -121,10 +122,10 @@ export const formatDisplayDate = (dateKey) => {
   }).format(new Date(Date.UTC(y, m - 1, d)));
 };
 
-/** Get next working day from dateKey (if dateKey is weekend, jump to Monday). */
+/** Get next working day from dateKey (skips weekends + holidays). */
 export const nextWorkingDay = (dateKey) => {
   let current = dateKey;
-  while (isWeekend(current)) {
+  while (isNonWorkingDay(current)) {
     current = addCalendarDays(current, 1);
   }
   return current;
@@ -140,6 +141,10 @@ export const isWeekend = (dateKey) => {
   const dow = getDayOfWeek(dateKey);
   return dow === 0 || dow === 6;
 };
+
+/** Weekend or manually marked holiday — bot should not automate. */
+export const isNonWorkingDay = (dateKey) =>
+  isWeekend(dateKey) || isHoliday(dateKey);
 
 /**
  * Working-day index: counts only Mon-Fri since epoch.
@@ -228,12 +233,12 @@ export const getActivePreviewTarget = (date = new Date()) => {
   const afterSend = isPastDailySendTime(date);
   const timeLabel = dailySendTimeLabel();
 
-  if (isWeekend(todayKey)) {
-    const mondayKey = nextWorkingDay(todayKey);
+  if (isNonWorkingDay(todayKey)) {
+    const nextKey = nextWorkingDay(todayKey);
     return {
-      previewDateKey: mondayKey,
-      previewFor: 'monday',
-      label: `Next message (going out Monday ${mondayKey} at ${timeLabel})`,
+      previewDateKey: nextKey,
+      previewFor: 'next_working_day',
+      label: `Next message (going out ${nextKey} at ${timeLabel})`,
     };
   }
 
@@ -293,6 +298,7 @@ export const getMonthSchedule = (year, month) => {
       developerPairs: pairsData.developerPairs,
       qaPair: pairsData.qaPair,
       pairs: pairsData.allPairs.map(formatPairLine),
+      isHoliday: isHoliday(dateKey),
     });
   }
 
@@ -324,8 +330,13 @@ export const getNextCronTarget = (
   const todayKey = getKarachiDateKey(date);
   let candidateKey = todayKey;
 
-  if (isWeekend(todayKey) || isPastCronTimeToday(expression, fallbackHour, fallbackMinute, date)) {
-    candidateKey = isWeekend(todayKey) ? nextWorkingDay(todayKey) : addWorkingDays(todayKey, 1);
+  if (
+    isNonWorkingDay(todayKey) ||
+    isPastCronTimeToday(expression, fallbackHour, fallbackMinute, date)
+  ) {
+    candidateKey = isNonWorkingDay(todayKey)
+      ? nextWorkingDay(todayKey)
+      : addWorkingDays(todayKey, 1);
   }
 
   const targetMs = karachiWallTimeToUtcMs(candidateKey, hour, minute);

@@ -129,12 +129,45 @@ router.post('/send', async (req, res) => {
 
 router.get('/month', async (req, res) => {
   try {
+    const { ensureHolidayCache } = await import('../services/holidayService.js');
+    await ensureHolidayCache();
+
     const { year, month } = req.query;
     const data =
       year && month
         ? getMonthlyPairs(year, month)
         : getDefaultMonthlyPairs();
     res.json(data);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+/** Mark / clear a calendar day as holiday (bot skips automation that day). */
+router.put('/holidays', async (req, res) => {
+  try {
+    const dateKey = String(req.body?.dateKey || '').trim();
+    const holiday = Boolean(req.body?.holiday);
+    const label =
+      typeof req.body?.label === 'string' && req.body.label.trim()
+        ? req.body.label.trim()
+        : 'Holiday';
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ message: 'dateKey must be YYYY-MM-DD' });
+    }
+
+    const { getDayOfWeek } = await import('../services/pairService.js');
+    const dow = getDayOfWeek(dateKey);
+    if (dow === 0 || dow === 6) {
+      return res.status(400).json({
+        message: 'Weekends are already off — only weekdays can be marked holiday',
+      });
+    }
+
+    const { setHoliday } = await import('../services/holidayService.js');
+    const result = await setHoliday(dateKey, holiday, label);
+    res.json({ ok: true, ...result });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

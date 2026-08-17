@@ -7,6 +7,7 @@ import {
   getKarachiDateKey,
   getPreviousWorkingDay,
   isWeekend,
+  isNonWorkingDay,
 } from './pairService.js';
 import { buildPairKey, getPendingPairs } from './reviewService.js';
 import { sendMatrixMessageToRoom } from './matrixService.js';
@@ -98,8 +99,14 @@ export const sendDiscussionPrompts = async (
   meetingDateKey = getKarachiDateKey(),
   { force = false } = {}
 ) => {
-  if (isWeekend(meetingDateKey)) {
-    return { skipped: true, reason: 'Weekend — no discussion prompts', prompts: [] };
+  if (isNonWorkingDay(meetingDateKey)) {
+    return {
+      skipped: true,
+      reason: isWeekend(meetingDateKey)
+        ? 'Weekend — no discussion prompts'
+        : 'Holiday — no discussion prompts',
+      prompts: [],
+    };
   }
 
   const reviewDateKey = getPreviousWorkingDay(meetingDateKey);

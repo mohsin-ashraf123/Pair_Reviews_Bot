@@ -43,6 +43,7 @@ function PairsSkeleton() {
             <span className="pairs-skel-line pairs-skel-day" />
             <span className="pairs-skel-line pairs-skel-lead" />
             <span className="pairs-skel-line pairs-skel-pairs" />
+            <span className="pairs-skel-line pairs-skel-status" />
           </div>
         ))}
       </div>
@@ -55,6 +56,7 @@ function Pairs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const [savingKey, setSavingKey] = useState('');
   const todayKey = useMemo(() => todayKeyKarachi(), []);
 
   const loadMonth = async (year, month) => {
@@ -89,9 +91,40 @@ function Pairs() {
     loadMonth(year, month);
   };
 
+  const handleHolidayChange = async (dateKey, nextValue) => {
+    const holiday = nextValue === 'holiday';
+    setSavingKey(dateKey);
+    setError('');
+
+    // Optimistic UI
+    setData((prev) => {
+      if (!prev?.schedule) return prev;
+      return {
+        ...prev,
+        schedule: prev.schedule.map((row) =>
+          row.dateKey === dateKey ? { ...row, isHoliday: holiday } : row
+        ),
+      };
+    });
+
+    try {
+      await axios.put(`${API}/holidays`, { dateKey, holiday });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update holiday');
+      // Reload to restore truth
+      if (data?.year && data?.month) {
+        await loadMonth(data.year, data.month);
+      }
+    } finally {
+      setSavingKey('');
+    }
+  };
+
   const monthLabel = data
     ? `${MONTH_NAMES[data.month - 1]} ${data.year}`
     : '';
+
+  const holidayCount = data?.schedule?.filter((r) => r.isHoliday).length || 0;
 
   if (loading && !data) {
     return <PairsSkeleton />;
@@ -108,6 +141,11 @@ function Pairs() {
             {data?.schedule?.length > 0 && (
               <span className="pairs-count-pill">
                 {data.schedule.length} days
+              </span>
+            )}
+            {holidayCount > 0 && (
+              <span className="pairs-count-pill holiday">
+                {holidayCount} holiday{holidayCount === 1 ? '' : 's'}
               </span>
             )}
           </p>
@@ -132,21 +170,29 @@ function Pairs() {
                 <th>Day</th>
                 <th>Lead</th>
                 <th>Pairs</th>
+                <th className="col-status">Day type</th>
               </tr>
             </thead>
             <tbody>
               {data?.schedule?.length ? (
                 data.schedule.map((row, index) => {
                   const isToday = row.dateKey === todayKey;
+                  const isHoliday = Boolean(row.isHoliday);
                   return (
                     <tr
                       key={row.dateKey}
-                      className={isToday ? 'is-today' : undefined}
+                      className={[
+                        isToday ? 'is-today' : '',
+                        isHoliday ? 'is-holiday' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || undefined}
                     >
                       <td className="col-num">{index + 1}</td>
                       <td className="col-date">
                         <span className="date-main">{formatShortDate(row.dateKey)}</span>
                         {isToday && <span className="today-tag">Today</span>}
+                        {isHoliday && <span className="holiday-tag">Holiday</span>}
                       </td>
                       <td className="col-day">{row.dayName}</td>
                       <td className="col-lead">
@@ -161,12 +207,26 @@ function Pairs() {
                           ))}
                         </div>
                       </td>
+                      <td className="col-status">
+                        <select
+                          className={`day-type-select${isHoliday ? ' holiday' : ''}`}
+                          value={isHoliday ? 'holiday' : 'working'}
+                          disabled={savingKey === row.dateKey || loading}
+                          aria-label={`Day type for ${row.dateKey}`}
+                          onChange={(e) =>
+                            handleHolidayChange(row.dateKey, e.target.value)
+                          }
+                        >
+                          <option value="working">Working day</option>
+                          <option value="holiday">Holiday</option>
+                        </select>
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="empty-row">
+                  <td colSpan={6} className="empty-row">
                     No weekday pairs for this month
                   </td>
                 </tr>

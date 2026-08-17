@@ -4,6 +4,7 @@ import {
   getKarachiDateKey,
   getPreviousWorkingDay,
   isWeekend,
+  isNonWorkingDay,
 } from './pairService.js';
 import { analyzeMeetingDay } from './aiAnalyzeService.js';
 import {
@@ -56,8 +57,13 @@ export const joinBossRoom = async () => {
 export const prepareBossDailyReport = async (triggeredBy = 'cron') => {
   const sendDateKey = getKarachiDateKey();
 
-  if (isWeekend(sendDateKey)) {
-    return { skipped: true, reason: 'Weekend — no boss report' };
+  if (isNonWorkingDay(sendDateKey)) {
+    return {
+      skipped: true,
+      reason: isWeekend(sendDateKey)
+        ? 'Weekend — no boss report'
+        : 'Holiday — no boss report',
+    };
   }
 
   const roomId = getBossRoomId();
@@ -181,8 +187,13 @@ export const prepareBossDailyReport = async (triggeredBy = 'cron') => {
 export const sendBossDailyReport = async (triggeredBy = 'cron') => {
   const sendDateKey = getKarachiDateKey();
 
-  if (isWeekend(sendDateKey)) {
-    return { skipped: true, reason: 'Weekend — no boss report' };
+  if (isNonWorkingDay(sendDateKey)) {
+    return {
+      skipped: true,
+      reason: isWeekend(sendDateKey)
+        ? 'Weekend — no boss report'
+        : 'Holiday — no boss report',
+    };
   }
 
   const roomId = getBossRoomId();

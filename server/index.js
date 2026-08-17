@@ -16,6 +16,7 @@ import {
   joinBossRoom,
   healDeliveredBossReports,
 } from './services/bossReportService.js';
+import { ensureHolidayCache } from './services/holidayService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '../client/dist');
@@ -63,6 +64,9 @@ const start = async () => {
 
   try {
     await connectDB();
+    await ensureHolidayCache().catch((error) =>
+      console.warn(`[holiday] Cache load failed: ${error.message}`)
+    );
     await seedMemberRooms();
 
     if (config.runMatrixBot) {

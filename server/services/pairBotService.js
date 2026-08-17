@@ -10,6 +10,7 @@ import {
   getFollowUpTargetDateKey,
   isPastCronTimeToday,
   isWeekend,
+  isNonWorkingDay,
 } from './pairService.js';
 import { config } from '../config/appConfig.js';
 import { sendMatrixMessage } from './matrixService.js';
@@ -61,8 +62,13 @@ export const getTodayPreview = async () => {
 export const sendDailyPairs = async (triggeredBy = 'manual') => {
   const dateKey = getKarachiDateKey();
 
-  if (isWeekend(dateKey) && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Weekend — no pairs today' };
+  if (isNonWorkingDay(dateKey) && triggeredBy === 'cron') {
+    return {
+      skipped: true,
+      reason: isWeekend(dateKey)
+        ? 'Weekend — no pairs today'
+        : 'Holiday — no pairs today',
+    };
   }
 
   const pairsData = buildDailyPairs();
@@ -152,8 +158,13 @@ export const sendReviewReminder = async (
 ) => {
   const dateKey = getKarachiDateKey();
 
-  if (isWeekend(dateKey)) {
-    return { skipped: true, reason: 'Weekend — no reminder' };
+  if (isNonWorkingDay(dateKey)) {
+    return {
+      skipped: true,
+      reason: isWeekend(dateKey)
+        ? 'Weekend — no reminder'
+        : 'Holiday — no reminder',
+    };
   }
 
   const review = await DailyReview.findOne({ dateKey });
@@ -228,8 +239,13 @@ export const sendMissingReviewFollowUps = async (
 ) => {
   const todayKey = getKarachiDateKey();
 
-  if (isWeekend(todayKey) && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Weekend — no follow-ups' };
+  if (isNonWorkingDay(todayKey) && triggeredBy === 'cron') {
+    return {
+      skipped: true,
+      reason: isWeekend(todayKey)
+        ? 'Weekend — no follow-ups'
+        : 'Holiday — no follow-ups',
+    };
   }
 
   // Cron always chases the previous working day; a manual run from the
@@ -276,8 +292,13 @@ export const sendMissingReviewFollowUps = async (
 export const sendMissedReviewNotice = async (triggeredBy = 'cron') => {
   const todayKey = getKarachiDateKey();
 
-  if (isWeekend(todayKey)) {
-    return { skipped: true, reason: 'Weekend — no notice' };
+  if (isNonWorkingDay(todayKey)) {
+    return {
+      skipped: true,
+      reason: isWeekend(todayKey)
+        ? 'Weekend — no notice'
+        : 'Holiday — no notice',
+    };
   }
 
   // Never post the room summary before the lead morning report —
@@ -386,8 +407,13 @@ export const sendDiscussionFollowUps = async (
 ) => {
   const todayKey = getKarachiDateKey();
 
-  if (isWeekend(todayKey) && triggeredBy === 'cron') {
-    return { skipped: true, reason: 'Weekend — no discussion prompts' };
+  if (isNonWorkingDay(todayKey) && triggeredBy === 'cron') {
+    return {
+      skipped: true,
+      reason: isWeekend(todayKey)
+        ? 'Weekend — no discussion prompts'
+        : 'Holiday — no discussion prompts',
+    };
   }
 
   const jobKey = `discussion_prompts:${todayKey}`;

@@ -112,6 +112,76 @@
   background: rgba(226, 235, 231, 0.95);
 }
 
+.pairs-table tbody tr.is-holiday {
+  background: rgba(180, 83, 9, 0.06);
+}
+
+.pairs-table tbody tr.is-holiday:hover {
+  background: rgba(180, 83, 9, 0.1);
+}
+
+.pairs-table tbody tr.is-holiday.is-today {
+  background: rgba(180, 83, 9, 0.1);
+}
+
+.pairs-count-pill.holiday {
+  background: rgba(180, 83, 9, 0.12);
+  color: #9a3412;
+}
+
+.holiday-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.35rem;
+  border-radius: 4px;
+  background: #9a3412;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.col-status {
+  white-space: nowrap;
+  width: 140px;
+}
+
+.day-type-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 122px;
+  padding: 0.35rem 1.6rem 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%) calc(100% - 14px) / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%) calc(100% - 9px) / 5px 5px no-repeat,
+    #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.day-type-select:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.day-type-select.holiday {
+  border-color: rgba(154, 52, 18, 0.35);
+  background-color: #fff7ed;
+  color: #9a3412;
+}
+
+.pairs-skel-status {
+  width: 110px;
+  height: 1.6rem;
+}
+
 .col-num {
   width: 40px;
   color: var(--text-muted);
