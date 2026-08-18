@@ -19,6 +19,7 @@ const roomMessageSchema = new mongoose.Schema(
         'bot_wrong_pair',
         'bot_duplicate',
         'bot_boss',
+        'bot_thread',
         'bot_dm_prompt',
         'bot_dm_ack',
         'member_dm_reply',

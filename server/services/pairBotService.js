@@ -115,6 +115,18 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
       triggeredBy,
     });
 
+    try {
+      const { seedPairReviewThreadDraft } = await import('./pairThreadService.js');
+      await seedPairReviewThreadDraft({
+        dateKey,
+        rootEventId: result.event_id,
+        rootBody: message,
+        roomId: config.matrix.roomId,
+      });
+    } catch (error) {
+      console.warn(`[thread] Draft seed failed: ${error.message}`);
+    }
+
     if (triggeredBy === 'cron') {
       await completeCronJob(jobKey, result.event_id);
     }

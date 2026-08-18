@@ -195,6 +195,7 @@ router.get('/history', async (req, res) => {
             'bot_wrong_pair',
             'bot_duplicate',
             'bot_boss',
+            'bot_thread',
           ],
         },
       })

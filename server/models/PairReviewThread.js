@@ -30,8 +30,8 @@ const pairReviewThreadSchema = new mongoose.Schema(
     rootBody: String,
     status: {
       type: String,
-      enum: ['pending', 'sent', 'skipped', 'failed'],
-      default: 'pending',
+      enum: ['drafting', 'ready', 'pending', 'sent', 'skipped', 'failed'],
+      default: 'drafting',
     },
     skipReason: String,
     error: String,

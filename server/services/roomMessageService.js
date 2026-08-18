@@ -204,21 +204,32 @@ export const persistAndBroadcastMessage = async (payload) => {
           saved.senderId,
           saved.eventId
         );
-      } else if (result?.status === 'success' && result.partialQa) {
+      } else if (result?.status === 'success') {
         try {
-          const { sendPartialQaMissingPrompt } = await import(
-            './missingReviewPromptService.js'
+          const { syncPairReviewThreadDraft } = await import(
+            './pairThreadService.js'
           );
-          await sendPartialQaMissingPrompt({
-            dateKey: saved.dateKey,
-            pair: result.matchedPair,
-            presentMembers: result.presentMembers,
-            missingMembers: result.missingMembers,
-          });
+          await syncPairReviewThreadDraft(saved.dateKey);
         } catch (error) {
-          console.error(
-            `[review] Partial QA follow-up failed: ${error.message}`
-          );
+          console.warn(`[thread] Draft sync failed: ${error.message}`);
+        }
+
+        if (result.partialQa) {
+          try {
+            const { sendPartialQaMissingPrompt } = await import(
+              './missingReviewPromptService.js'
+            );
+            await sendPartialQaMissingPrompt({
+              dateKey: saved.dateKey,
+              pair: result.matchedPair,
+              presentMembers: result.presentMembers,
+              missingMembers: result.missingMembers,
+            });
+          } catch (error) {
+            console.error(
+              `[review] Partial QA follow-up failed: ${error.message}`
+            );
+          }
         }
       }
     }

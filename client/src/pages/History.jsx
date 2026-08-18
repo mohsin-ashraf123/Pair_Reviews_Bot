@@ -41,6 +41,9 @@ function noticeMeta(category) {
   if (category === 'bot_boss') {
     return { label: 'Ayaaz Sir report', tone: 'warn' };
   }
+  if (category === 'bot_thread') {
+    return { label: 'Review thread', tone: 'warn' };
+  }
   return { label: 'Notice', tone: 'muted' };
 }
 
@@ -62,6 +65,8 @@ function failureKindLabel(kind) {
       return 'Lead report';
     case 'boss_daily_report':
       return 'Ayaaz Sir report';
+    case 'pair_review_thread':
+      return 'Review thread';
     case 'lead_report_ack':
     case 'discussion_ack':
     case 'missing_review_ack':

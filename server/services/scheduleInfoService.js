@@ -446,8 +446,77 @@ const buildScheduledMessagesInfo = async () => {
 
   reminder.example = reminder.messages.map((m) => m.body).join('\n\n———\n\n');
 
+  // --- 10:00 Pair review thread under yesterday's Pairs Today ---
+  let threadDraft = null;
+  try {
+    const PairReviewThread = (await import('../models/PairReviewThread.js'))
+      .default;
+    threadDraft = await PairReviewThread.findOne({
+      reviewDateKey: yesterdayKey,
+    }).lean();
+  } catch {
+    threadDraft = null;
+  }
+
+  const pairThread = {
+    id: 'pair_review_thread',
+    time: cronTimeLabel(config.pairThreadCronSchedule, 10, 0),
+    days: 'Mon–Fri',
+    cron: config.pairThreadCronSchedule,
+    title: 'Review thread digest',
+    destination: 'Main room — thread under yesterday’s Pairs Today',
+    destinationKind: 'main',
+    description:
+      'Posts yesterday’s meaningful pair reviews as Element thread replies under that day’s Pairs Today. Draft fills live on Threads as reviews arrive.',
+    exampleForDate: formatDisplayDate(yesterdayKey),
+    recipients: [
+      { name: 'Main room', role: 'Thread replies', via: 'Pairs Today thread' },
+    ],
+    messages: [],
+    exampleNote: null,
+    example: '',
+  };
+
+  const readyReplies = (threadDraft?.replies || []).filter((r) => !r.skipped);
+  if (threadDraft?.status === 'sent' && readyReplies.length) {
+    pairThread.exampleNote = `Already posted for ${formatDisplayDate(yesterdayKey)}.`;
+    pairThread.messages = readyReplies.slice(0, 4).map((r, i) => ({
+      label: `${i + 1} · ${r.pairLabel || (r.pair || []).join(' + ')}`,
+      to: 'Thread',
+      body: r.body || r.pairLabel,
+    }));
+  } else if (readyReplies.length) {
+    pairThread.exampleNote = `Draft ready — ${readyReplies.length} review(s) will post at 10:00 AM.`;
+    pairThread.messages = readyReplies.slice(0, 4).map((r, i) => ({
+      label: `${i + 1} · ${r.pairLabel || (r.pair || []).join(' + ')}`,
+      to: 'Thread',
+      body: r.body || r.pairLabel,
+    }));
+  } else {
+    pairThread.exampleNote =
+      'As pair reviews arrive they show on Threads; at 10:00 AM they post under yesterday’s Pairs Today.';
+    pairThread.messages = [
+      {
+        label: 'Status',
+        to: '—',
+        body: `Waiting for meaningful pair reviews for ${formatDisplayDate(yesterdayKey)} (no-issues reviews are skipped).`,
+      },
+    ];
+  }
+  pairThread.example = pairThread.messages
+    .map((m) => m.body)
+    .join('\n\n———\n\n');
+
   return {
     timezone: config.timezone,
-    schedules: [leadFollowUps, missedNotice, dailyPairs, discussion, bossReport, reminder],
+    schedules: [
+      pairThread,
+      leadFollowUps,
+      missedNotice,
+      dailyPairs,
+      discussion,
+      bossReport,
+      reminder,
+    ],
   };
 };

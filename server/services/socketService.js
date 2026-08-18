@@ -48,3 +48,7 @@ export const emitMemberRoomUpdate = (payload) => {
 export const emitMemberRoomMessage = (message) => {
   io?.emit('member-room:message', message);
 };
+
+export const emitThreadUpdate = (thread) => {
+  io?.emit('thread:update', thread);
+};

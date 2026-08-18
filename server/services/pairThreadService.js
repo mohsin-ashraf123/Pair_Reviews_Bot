@@ -16,11 +16,13 @@ import {
   getMatrixClient,
   sendMatrixThreadReply,
 } from './matrixService.js';
+import { logOutgoingMessage } from './roomMessageService.js';
 import {
   claimCronJob,
   completeCronJob,
   releaseCronJob,
 } from './cronJobService.js';
+import { emitThreadUpdate } from './socketService.js';
 
 const pairLabel = (pair = []) =>
   Array.isArray(pair) ? pair.join(' + ') : String(pair || '—');
@@ -36,6 +38,38 @@ const personalRoomIds = () =>
   Object.values(config.memberRoomMap || {}).filter(Boolean);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toThreadPayload = (doc) => {
+  if (!doc) return null;
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  return {
+    id: plain._id?.toString(),
+    reviewDateKey: plain.reviewDateKey,
+    reviewDateLabel: formatDisplayDate(plain.reviewDateKey),
+    sendDateKey: plain.sendDateKey || null,
+    status: plain.status,
+    skipReason: plain.skipReason || null,
+    error: plain.error || null,
+    rootEventId: plain.rootEventId || null,
+    rootBody: plain.rootBody || null,
+    postedCount: plain.postedCount || 0,
+    skippedCount: plain.skippedCount || 0,
+    readyCount: (plain.replies || []).filter((r) => !r.skipped).length,
+    sentAt: plain.sentAt || null,
+    updatedAt: plain.updatedAt || null,
+    replies: (plain.replies || []).map((r) => ({
+      pair: r.pair,
+      pairKey: r.pairKey || null,
+      pairLabel: r.pairLabel || pairLabel(r.pair),
+      senderName: r.senderName || null,
+      body: r.body || null,
+      reviewEventId: r.reviewEventId || null,
+      threadEventId: r.threadEventId || null,
+      skipped: Boolean(r.skipped),
+      skipReason: r.skipReason || null,
+    })),
+  };
+};
 
 /** Build Element-friendly thread reply (markdown + HTML bold pair name). */
 export const formatThreadReviewReply = ({ pair, body, senderName }) => {
@@ -91,7 +125,7 @@ const findPairsRootEvent = async (reviewDateKey) => {
   return null;
 };
 
-/** Submitted reviews with real findings (skip no-issues). */
+/** Real pair reviews only (matched pairs in main room). Skip no-issues. */
 export const loadThreadableReviews = async (reviewDateKey) => {
   const review = await DailyReview.findOne({ dateKey: reviewDateKey }).lean();
   if (!review?.pairsSentAt) return { review, items: [], skipped: [] };
@@ -156,8 +190,116 @@ export const loadThreadableReviews = async (reviewDateKey) => {
 };
 
 /**
- * 10:00 AM weekdays — post yesterday's meaningful pair reviews as thread
- * replies under that day's "Pairs Today" message.
+ * When "Pairs Today" goes out — open a live draft so the Threads page can
+ * collect reviews all day (posted to Element next morning at 10:00).
+ */
+export const seedPairReviewThreadDraft = async ({
+  dateKey,
+  rootEventId,
+  rootBody,
+  roomId,
+}) => {
+  if (!dateKey || !rootEventId) return null;
+
+  const existing = await PairReviewThread.findOne({ reviewDateKey: dateKey });
+  if (existing?.status === 'sent') return existing;
+
+  const doc = await PairReviewThread.findOneAndUpdate(
+    { reviewDateKey: dateKey },
+    {
+      $set: {
+        rootEventId,
+        rootBody: rootBody || '',
+        roomId: roomId || config.matrix.roomId,
+        status: 'drafting',
+        skipReason: null,
+        error: null,
+      },
+      $setOnInsert: {
+        reviewDateKey: dateKey,
+        replies: [],
+        postedCount: 0,
+        skippedCount: 0,
+      },
+    },
+    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+  );
+
+  emitThreadUpdate(toThreadPayload(doc));
+  console.log(`[thread] Draft opened for ${dateKey} under ${rootEventId}`);
+
+  // Pull in any reviews already recorded for this day.
+  return syncPairReviewThreadDraft(dateKey);
+};
+
+/**
+ * Rebuild draft replies from real pair-review messages only.
+ * Random chat never appears here (only countsAsReview + matched pairKey).
+ */
+export const syncPairReviewThreadDraft = async (dateKey) => {
+  if (!dateKey) return null;
+
+  const existing = await PairReviewThread.findOne({ reviewDateKey: dateKey });
+  if (existing?.status === 'sent') return existing;
+
+  const root = await findPairsRootEvent(dateKey);
+  if (!root?.eventId && !existing) return null;
+
+  const { items, skipped } = await loadThreadableReviews(dateKey);
+  const prevByKey = new Map(
+    (existing?.replies || [])
+      .filter((r) => r.pairKey)
+      .map((r) => [r.pairKey, r])
+  );
+
+  const replies = [
+    ...items.map((item) => {
+      const formatted = formatThreadReviewReply(item);
+      const prev = prevByKey.get(item.pairKey);
+      return {
+        pair: item.pair,
+        pairKey: item.pairKey,
+        pairLabel: item.pairLabel,
+        reviewEventId: item.reviewEventId,
+        threadEventId: prev?.threadEventId || null,
+        senderName: item.senderName,
+        body: formatted.body,
+        skipped: false,
+        skipReason: null,
+      };
+    }),
+    ...skipped,
+  ];
+
+  const readyCount = replies.filter((r) => !r.skipped).length;
+  const status = readyCount > 0 ? 'ready' : 'drafting';
+
+  const doc = await PairReviewThread.findOneAndUpdate(
+    { reviewDateKey: dateKey },
+    {
+      $set: {
+        rootEventId: root?.eventId || existing?.rootEventId || null,
+        rootBody: root?.body || existing?.rootBody || '',
+        roomId: root?.roomId || existing?.roomId || config.matrix.roomId,
+        status,
+        replies,
+        skippedCount: skipped.length,
+        postedCount: replies.filter((r) => r.threadEventId).length,
+        skipReason: null,
+        error: null,
+      },
+      $setOnInsert: { reviewDateKey: dateKey },
+    },
+    { upsert: Boolean(root?.eventId), returnDocument: 'after', setDefaultsOnInsert: true }
+  );
+
+  if (doc) emitThreadUpdate(toThreadPayload(doc));
+  return doc;
+};
+
+/**
+ * 10:00 AM — post the prepared draft (yesterday's reviews) as Element thread
+ * replies under that day's Pairs Today message. Also save to History.
  */
 export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
   const sendDateKey = getKarachiDateKey();
@@ -185,7 +327,9 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
   }
 
   try {
-    let doc = await PairReviewThread.findOne({ reviewDateKey });
+    let doc = await syncPairReviewThreadDraft(reviewDateKey);
+    doc = doc || (await PairReviewThread.findOne({ reviewDateKey }));
+
     if (doc?.status === 'sent' && doc.postedCount > 0 && triggeredBy === 'cron') {
       await completeCronJob(jobKey, doc.rootEventId);
       return { skipped: true, reason: 'Thread already sent for this review day', doc };
@@ -215,7 +359,15 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
     }
 
     const { items, skipped } = await loadThreadableReviews(reviewDateKey);
-    if (!items.length) {
+    const alreadyPosted = new Map(
+      (doc?.replies || [])
+        .filter((r) => r.pairKey && r.threadEventId)
+        .map((r) => [r.pairKey, r])
+    );
+
+    const toPost = items.filter((item) => !alreadyPosted.has(item.pairKey));
+
+    if (!toPost.length && alreadyPosted.size === 0) {
       const skippedDoc = await PairReviewThread.findOneAndUpdate(
         { reviewDateKey },
         {
@@ -242,11 +394,11 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
       };
     }
 
-    // Ensure Matrix client is warm before threaded sends.
-    await getMatrixClient();
+    if (toPost.length) {
+      await getMatrixClient();
+    }
 
-    const posted = [];
-    for (const item of items) {
+    for (const item of toPost) {
       const content = formatThreadReviewReply(item);
       const result = await sendMatrixThreadReply(
         root.roomId,
@@ -261,7 +413,14 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
         }
       );
 
-      posted.push({
+      await logOutgoingMessage(content.body, result.event_id, 'bot_thread', {
+        dateKey: reviewDateKey,
+        roomId: root.roomId,
+      }).catch((error) =>
+        console.warn(`[thread] History log failed: ${error.message}`)
+      );
+
+      alreadyPosted.set(item.pairKey, {
         pair: item.pair,
         pairKey: item.pairKey,
         pairLabel: item.pairLabel,
@@ -270,10 +429,16 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
         senderName: item.senderName,
         body: content.body,
         skipped: false,
+        skipReason: null,
       });
 
       await sleep(400);
     }
+
+    const finalReplies = [
+      ...[...alreadyPosted.values()],
+      ...skipped.filter((s) => !alreadyPosted.has(s.pairKey)),
+    ];
 
     doc = await PairReviewThread.findOneAndUpdate(
       { reviewDateKey },
@@ -286,8 +451,8 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
           status: 'sent',
           skipReason: null,
           error: null,
-          replies: [...posted, ...skipped],
-          postedCount: posted.length,
+          replies: finalReplies,
+          postedCount: alreadyPosted.size,
           skippedCount: skipped.length,
           sentAt: new Date(),
         },
@@ -300,8 +465,9 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
       await completeCronJob(jobKey, root.eventId);
     }
 
+    emitThreadUpdate(toThreadPayload(doc));
     console.log(
-      `[thread] Posted ${posted.length} review(s) under Pairs Today for ${reviewDateKey}`
+      `[thread] Posted ${alreadyPosted.size} review(s) under Pairs Today for ${reviewDateKey}`
     );
 
     return {
@@ -309,7 +475,7 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
       reviewDateKey,
       sendDateKey,
       rootEventId: root.eventId,
-      postedCount: posted.length,
+      postedCount: alreadyPosted.size,
       skippedCount: skipped.length,
       doc,
     };
@@ -335,41 +501,26 @@ export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
 };
 
 export const listPairReviewThreads = async (limit = 40) => {
+  const todayKey = getKarachiDateKey();
+  // Keep today's draft fresh when the page loads.
+  await syncPairReviewThreadDraft(todayKey).catch(() => null);
+
   const items = await PairReviewThread.find({})
     .sort({ reviewDateKey: -1 })
     .limit(Math.min(Number(limit) || 40, 100))
     .lean();
 
   return {
-    todayKey: getKarachiDateKey(),
-    defaultReviewKey: getPreviousWorkingDay(getKarachiDateKey()),
-    items: items.map((doc) => ({
-      id: doc._id?.toString(),
-      reviewDateKey: doc.reviewDateKey,
-      reviewDateLabel: formatDisplayDate(doc.reviewDateKey),
-      sendDateKey: doc.sendDateKey || null,
-      status: doc.status,
-      skipReason: doc.skipReason || null,
-      error: doc.error || null,
-      rootEventId: doc.rootEventId || null,
-      rootBody: doc.rootBody || null,
-      postedCount: doc.postedCount || 0,
-      skippedCount: doc.skippedCount || 0,
-      sentAt: doc.sentAt || null,
-      replies: (doc.replies || []).map((r) => ({
-        pair: r.pair,
-        pairLabel: r.pairLabel || pairLabel(r.pair),
-        senderName: r.senderName || null,
-        body: r.body || null,
-        threadEventId: r.threadEventId || null,
-        skipped: Boolean(r.skipped),
-        skipReason: r.skipReason || null,
-      })),
-    })),
+    todayKey,
+    defaultReviewKey: todayKey,
+    items: items.map((doc) => toThreadPayload(doc)),
   };
 };
 
 export const getPairReviewThreadDetail = async (reviewDateKey) => {
+  if (reviewDateKey) {
+    await syncPairReviewThreadDraft(reviewDateKey).catch(() => null);
+  }
   const list = await listPairReviewThreads(120);
   const item =
     list.items.find((row) => row.reviewDateKey === reviewDateKey) || null;
