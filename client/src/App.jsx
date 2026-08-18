@@ -4,6 +4,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import Pairs from './pages/Pairs';
+import Threads from './pages/Threads';
 import History from './pages/History';
 import Performance from './pages/Performance';
 import MemberRooms from './pages/MemberRooms';
@@ -42,6 +43,7 @@ function App() {
       >
         <Route index element={<Overview />} />
         <Route path="pairs" element={<Pairs />} />
+        <Route path="threads" element={<Threads />} />
         <Route path="history" element={<History />} />
         <Route path="performance" element={<Performance />} />
         <Route path="members" element={<MemberRooms />} />

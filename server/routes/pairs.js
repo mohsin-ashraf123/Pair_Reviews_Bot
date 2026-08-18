@@ -38,6 +38,11 @@ import {
   listAnalyzeDates,
   getSirReportForReviewDay,
 } from '../services/aiAnalyzeService.js';
+import {
+  listPairReviewThreads,
+  getPairReviewThreadDetail,
+  postPairReviewThreadDigest,
+} from '../services/pairThreadService.js';
 
 const router = express.Router();
 
@@ -280,6 +285,32 @@ router.get('/lead-reports', async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 60, 120);
     res.json(await getLeadReportHistory(limit));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/** Element thread digests under each day's Pairs Today message. */
+router.get('/threads', async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 40, 100);
+    res.json(await listPairReviewThreads(limit));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/threads/:dateKey', async (req, res) => {
+  try {
+    res.json(await getPairReviewThreadDetail(req.params.dateKey));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/threads/run', async (req, res) => {
+  try {
+    res.json(await postPairReviewThreadDigest('manual'));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

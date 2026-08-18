@@ -366,6 +366,15 @@ export const getNextCronTarget = (
 export const getAllScheduleCountdowns = (date = new Date()) => {
   const jobs = [
     {
+      id: 'pair_review_thread',
+      title: 'Review thread digest',
+      destination: 'Main room — under yesterday’s Pairs Today',
+      destinationKind: 'main',
+      cron: config.pairThreadCronSchedule,
+      fallbackHour: 10,
+      fallbackMinute: 0,
+    },
+    {
       id: 'missing_review_prompts',
       title: 'Lead team report',
       destination: 'Yesterday’s lead — personal room',

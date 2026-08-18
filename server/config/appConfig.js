@@ -131,6 +131,9 @@ export const config = {
   missedReviewCronSchedule: morningSchedules.missedReview,
   missingReviewPromptCronSchedule: morningSchedules.prompt,
   discussionCronSchedule: process.env.DISCUSSION_PROMPT_CRON_SCHEDULE || '0 17 * * 1-5',
+  /** Yesterday's pair reviews → Element thread under Pairs Today (Mon–Fri 10:00 AM) */
+  pairThreadCronSchedule:
+    process.env.PAIR_THREAD_CRON_SCHEDULE || '0 10 * * 1-5',
   // Sir AI report: prepare 5:58 PM, send 6:00 PM (Mon–Fri)
   bossReportPrepareCronSchedule:
     process.env.BOSS_REPORT_PREPARE_CRON_SCHEDULE || '58 17 * * 1-5',

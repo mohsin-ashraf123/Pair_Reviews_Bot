@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 const navItems = [
   { label: 'Overview', short: 'Home', to: '/dashboard', icon: 'home' },
   { label: 'Pairs', short: 'Pairs', to: '/dashboard/pairs', icon: 'pairs' },
+  { label: 'Threads', short: 'Threads', to: '/dashboard/threads', icon: 'threads' },
   { label: 'History', short: 'History', to: '/dashboard/history', icon: 'history' },
   { label: 'Performance', short: 'Stats', to: '/dashboard/performance', icon: 'stats' },
   { label: 'Member Rooms', short: 'Rooms', to: '/dashboard/members', icon: 'rooms' },
@@ -41,6 +42,15 @@ function NavIcon({ name, active, size = 18 }) {
           <circle cx="16" cy="9" r="2.5" />
           <path d="M5 19c0-2.2 1.8-4 4-4" />
           <path d="M19 19c0-2.2-1.8-4-4-4" />
+        </svg>
+      );
+    case 'threads':
+      return (
+        <svg {...props}>
+          <path d="M6 5h12" />
+          <path d="M6 10h12" />
+          <path d="M6 15h7" />
+          <path d="M15 15v4l3-2.2" />
         </svg>
       );
     case 'history':

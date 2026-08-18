@@ -1,0 +1,238 @@
+.threads-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: calc(100vh - var(--header-height));
+  background: var(--surface-elevated);
+}
+
+.threads-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1.15rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: #f7f6f3;
+}
+
+.threads-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.threads-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.threads-subtitle {
+  margin: 0.35rem 0 0;
+  max-width: 42rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.threads-run-btn {
+  flex-shrink: 0;
+  padding: 0.55rem 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.threads-run-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.threads-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  min-height: 0;
+  flex: 1;
+}
+
+.threads-list {
+  border-right: 1px solid var(--border);
+  padding: 0.75rem;
+  overflow: auto;
+  background: #faf9f6;
+}
+
+.threads-list-label {
+  margin: 0 0 0.55rem 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.threads-list-item {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  margin-bottom: 0.4rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.threads-list-item:hover {
+  background: rgba(31, 61, 54, 0.04);
+}
+
+.threads-list-item.active {
+  background: #fff;
+  border-color: var(--border);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+}
+
+.threads-list-date {
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.threads-list-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.threads-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.threads-pill.tone-good {
+  background: rgba(22, 101, 52, 0.12);
+  color: #166534;
+}
+
+.threads-pill.tone-muted {
+  background: rgba(100, 116, 139, 0.14);
+  color: #475569;
+}
+
+.threads-pill.tone-danger {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+.threads-pill.tone-warn {
+  background: rgba(180, 83, 9, 0.12);
+  color: #9a3412;
+}
+
+.threads-detail {
+  padding: 1rem 1.15rem 1.5rem;
+  overflow: auto;
+}
+
+.threads-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.threads-detail-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.threads-note,
+.threads-empty,
+.threads-empty-panel {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.threads-root-card,
+.threads-reply-card {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #faf9f6;
+}
+
+.threads-card-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.threads-root-card pre,
+.threads-reply-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.threads-reply-card header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.threads-skipped {
+  margin-top: 1rem;
+}
+
+.threads-skipped ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 860px) {
+  .threads-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .threads-list {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 220px;
+  }
+
+  .threads-header {
+    flex-direction: column;
+  }
+}

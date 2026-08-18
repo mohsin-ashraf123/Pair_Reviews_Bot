@@ -6,6 +6,7 @@ import '../../pages/Dashboard.css';
 const PAGE_TITLES = {
   '/dashboard': 'Overview',
   '/dashboard/pairs': 'Pairs',
+  '/dashboard/threads': 'Threads',
   '/dashboard/history': 'History',
   '/dashboard/performance': 'Performance',
   '/dashboard/members': 'Member Rooms',

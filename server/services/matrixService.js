@@ -611,6 +611,53 @@ export const sendMatrixMessageToRoom = async (roomId, body, meta = {}) => {
   }
 };
 
+/**
+ * Reply inside an Element/Matrix thread rooted at `rootEventId`.
+ * Uses MSC3440 m.thread relation so replies nest under "Pairs Today".
+ */
+export const sendMatrixThreadReply = async (
+  roomId,
+  rootEventId,
+  body,
+  meta = {}
+) => {
+  if (!roomId) throw new Error('roomId is required');
+  if (!rootEventId) throw new Error('rootEventId is required');
+
+  try {
+    const client = await getMatrixClient();
+    const content = {
+      msgtype: 'm.text',
+      body,
+      'm.relates_to': {
+        rel_type: 'm.thread',
+        event_id: rootEventId,
+        is_falling_back: true,
+        'm.in_reply_to': { event_id: rootEventId },
+      },
+    };
+
+    if (meta.formattedBody) {
+      content.format = 'org.matrix.custom.html';
+      content.formatted_body = meta.formattedBody;
+    }
+
+    const eventId = await client.sendMessage(roomId, content);
+    return { event_id: eventId };
+  } catch (error) {
+    await recordBotSendFailure({
+      kind: meta.kind || 'pair_review_thread',
+      roomId,
+      member: meta.member || null,
+      body,
+      error,
+      dateKey: meta.dateKey || null,
+      triggeredBy: meta.triggeredBy || null,
+    });
+    throw error;
+  }
+};
+
 /** Join a room if not already joined — safe to call repeatedly. */
 export const joinMatrixRoom = async (roomId) => {
   const client = await getMatrixClient();

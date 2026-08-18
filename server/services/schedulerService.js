@@ -11,6 +11,7 @@ import {
   prepareBossDailyReport,
   sendBossDailyReport,
 } from './bossReportService.js';
+import { postPairReviewThreadDigest } from './pairThreadService.js';
 import { getNextDailySendTarget, getAllScheduleCountdowns } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
 
@@ -21,6 +22,7 @@ let promptTask = null;
 let discussionTask = null;
 let bossPrepareTask = null;
 let bossSendTask = null;
+let pairThreadTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
@@ -31,6 +33,7 @@ const cronInFlight = {
   discussion: false,
   bossPrepare: false,
   bossSend: false,
+  pairThread: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -119,6 +122,32 @@ export const startPairScheduler = () => {
     );
     console.log(
       `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  if (cron.validate(config.pairThreadCronSchedule) && !pairThreadTask) {
+    pairThreadTask = cron.schedule(
+      config.pairThreadCronSchedule,
+      () =>
+        runCronJob('pairThread', async () => {
+          try {
+            const result = await postPairReviewThreadDigest('cron');
+            if (result.skipped) {
+              console.log(`[cron] Pair review thread skipped: ${result.reason}`);
+            } else {
+              console.log(
+                `[cron] Pair review thread posted for ${result.reviewDateKey} ` +
+                  `(${result.postedCount} replies)`
+              );
+            }
+          } catch (error) {
+            console.error('[cron] Failed to post pair review thread:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Pair review thread scheduler active: "${config.pairThreadCronSchedule}" (${config.timezone})`
     );
   }
 
