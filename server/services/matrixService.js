@@ -351,9 +351,13 @@ const createEncryptedClient = async (session) => {
   scheduleMatrixDevicePersist();
 
   // Catch replies missed during decrypt lag / redeploy (e.g. lead YES).
-  const { reconcilePendingMemberReplies } = await import('./roomMessageService.js');
+  const { reconcilePendingMemberReplies, reconcileMainRoomReviews } =
+    await import('./roomMessageService.js');
   reconcilePendingMemberReplies(client).catch((error) =>
     console.warn(`[member-room] Startup reconcile failed: ${error.message}`)
+  );
+  reconcileMainRoomReviews(client).catch((error) =>
+    console.warn(`[room] Startup main-room reconcile failed: ${error.message}`)
   );
   scheduleMemberReplyReconcile(client);
 
@@ -365,9 +369,10 @@ const scheduleMemberReplyReconcile = (client) => {
   if (reconcileTimer) return;
   reconcileTimer = setInterval(() => {
     import('./roomMessageService.js')
-      .then(({ reconcilePendingMemberReplies }) =>
-        reconcilePendingMemberReplies(client)
-      )
+      .then(async ({ reconcilePendingMemberReplies, reconcileMainRoomReviews }) => {
+        await reconcilePendingMemberReplies(client);
+        await reconcileMainRoomReviews(client);
+      })
       .catch(() => {});
   }, 45_000);
   if (typeof reconcileTimer.unref === 'function') reconcileTimer.unref();

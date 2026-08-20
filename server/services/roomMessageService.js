@@ -214,6 +214,18 @@ export const persistAndBroadcastMessage = async (payload) => {
           console.warn(`[thread] Draft sync failed: ${error.message}`);
         }
 
+        try {
+          const { syncLeadSessionAfterLateReview } = await import(
+            './leadReportService.js'
+          );
+          await syncLeadSessionAfterLateReview(
+            saved.dateKey,
+            result.matchedPair
+          );
+        } catch (error) {
+          console.warn(`[lead] Late-review sync failed: ${error.message}`);
+        }
+
         if (result.partialQa) {
           try {
             const { sendPartialQaMissingPrompt } = await import(
@@ -685,6 +697,76 @@ export const reconcilePendingMemberReplies = async (client) => {
     console.log(`[member-room] Reconcile processed ${processed} missed reply(ies)`);
   }
   return { checked: targets.size, processed };
+};
+
+/**
+ * Backfill missed main-room messages (decrypt lag / sync gaps).
+ * Without this, a review can appear in Element but never hit Mongo / attendance.
+ */
+export const reconcileMainRoomReviews = async (client, { limit = 60 } = {}) => {
+  if (!client) return { checked: 0, processed: 0 };
+  const roomId = config.matrix.roomId;
+  if (!roomId) return { checked: 0, processed: 0 };
+
+  const botUserId = await client.getUserId();
+  let processed = 0;
+
+  try {
+    const res = await client.doRequest(
+      'GET',
+      `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages`,
+      { dir: 'b', limit: Math.min(Number(limit) || 60, 100) }
+    );
+
+    const chunk = [...(res?.chunk || [])].reverse();
+    for (const raw of chunk) {
+      let event = raw;
+
+      if (event.type === 'm.room.encrypted' && client.crypto) {
+        try {
+          const { EncryptedRoomEvent } = await import(
+            'matrix-bot-sdk/lib/models/events/EncryptedRoomEvent.js'
+          );
+          event = (
+            await client.crypto.decryptRoomEvent(
+              new EncryptedRoomEvent(event),
+              roomId
+            )
+          ).raw;
+        } catch (error) {
+          console.warn(
+            `[room] Main reconcile decrypt failed: ${error.message}`
+          );
+          continue;
+        }
+      }
+
+      if (event?.type !== 'm.room.message') continue;
+      if (event.sender && botUserId && event.sender === botUserId) continue;
+      const body = getEffectiveBody(event.content || {});
+      if (!body || !event.event_id) continue;
+      if (seenEvents.has(event.event_id)) continue;
+
+      const already = await RoomMessage.exists({ eventId: event.event_id });
+      if (already) {
+        seenEvents.add(event.event_id);
+        continue;
+      }
+
+      console.log(
+        `[room] Main reconcile ingesting ${event.sender} "${body.slice(0, 48)}"`
+      );
+      await handleIncomingMatrixMessage(roomId, event, botUserId);
+      processed += 1;
+    }
+  } catch (error) {
+    console.warn(`[room] Main reconcile failed: ${error.message}`);
+  }
+
+  if (processed) {
+    console.log(`[room] Main reconcile processed ${processed} missed message(s)`);
+  }
+  return { checked: 1, processed };
 };
 
 export const registerMatrixRoomListener = async (client) => {

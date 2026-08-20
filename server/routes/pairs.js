@@ -317,6 +317,26 @@ router.post('/threads/run', async (req, res) => {
   }
 });
 
+/** Recover a missed main-room pair review and re-prompt the lead to verify it. */
+router.post('/reviews/recover', async (req, res) => {
+  try {
+    const { recoverMissedPairReview } = await import(
+      '../services/leadReportService.js'
+    );
+    const result = await recoverMissedPairReview({
+      dateKey: req.body?.dateKey,
+      body: req.body?.body,
+      senderName: req.body?.senderName,
+      senderId: req.body?.senderId,
+      sentAt: req.body?.sentAt,
+      eventId: req.body?.eventId,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 router.get('/lead-reports/:dateKey', async (req, res) => {
   try {
     res.json(await getLeadReportDetail(req.params.dateKey));

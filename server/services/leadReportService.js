@@ -3,7 +3,7 @@ import LeadReportSession from '../models/LeadReportSession.js';
 import RoomMessage from '../models/RoomMessage.js';
 import { config } from '../config/appConfig.js';
 import { formatDisplayDate, getKarachiDateKey } from './pairService.js';
-import { getPendingPairs, getSubmittedPairs, buildPairKey, buildReviewState } from './reviewService.js';
+import { getPendingPairs, getSubmittedPairs, buildPairKey, buildReviewState, recordReviewFromMessage, recomputeReviewedMembers } from './reviewService.js';
 import { sendMatrixMessageToRoom } from './matrixService.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
@@ -808,3 +808,124 @@ export const getActiveLeadSessionForMember = (member) =>
     lead: member,
     stage: { $in: ACTIVE_LEAD_STAGES },
   }).sort({ updatedAt: -1 });
+
+/**
+ * When a pair review lands after the morning lead report already started,
+ * refresh pending/submitted. If we were asking "why missing?" for that pair,
+ * switch the lead to verify that review instead.
+ */
+export const syncLeadSessionAfterLateReview = async (dateKey, recoveredPair) => {
+  if (!dateKey || !recoveredPair?.length) return null;
+
+  const session = await LeadReportSession.findOne({
+    dateKey,
+    stage: { $in: ACTIVE_LEAD_STAGES },
+  });
+  if (!session) return null;
+
+  const review = await DailyReview.findOne({ dateKey });
+  if (!review) return null;
+
+  const pairKey = buildPairKey(recoveredPair);
+  const wasPending = (session.pendingPairs || []).some(
+    (pair) => buildPairKey(pair) === pairKey
+  );
+
+  session.pendingPairs = getPendingPairs(review.pairs, review);
+  session.submittedPairs = getSubmittedPairs(
+    review.pairs,
+    review.reviewedMembers
+  );
+  session.pairs = review.pairs;
+
+  const stillMissingFlow =
+    session.stage === 'awaiting_pair_choice' ||
+    session.stage === 'awaiting_forgot_reason';
+
+  if (wasPending && stillMissingFlow) {
+    const submitted = session.submittedPairs || [];
+    const verifyIdx = submitted.findIndex(
+      (pair) => buildPairKey(pair) === pairKey
+    );
+    if (verifyIdx >= 0) {
+      session.currentVerifyIndex = verifyIdx;
+      session.currentPairIndex = 0;
+      session.currentPairOptions = [];
+      session.pendingForgotOption = undefined;
+      session.pendingVerify = undefined;
+      await session.save();
+      console.log(
+        `[lead] Late review recovered ${recoveredPair.join(' + ')} — asking lead to verify`
+      );
+      return askAboutCurrentSubmittedPair(session);
+    }
+  }
+
+  await session.save();
+  emitMemberRoomUpdate({ dateKey, leadReport: session.toObject() });
+  return { status: 'refreshed', session };
+};
+
+/**
+ * Manually attach a missed main-room review (bot never ingested the Matrix event)
+ * and, if the lead is mid-report, ask them to verify that pair.
+ */
+export const recoverMissedPairReview = async ({
+  dateKey,
+  body,
+  senderName = 'Habiba',
+  senderId = null,
+  sentAt = null,
+  eventId = null,
+}) => {
+  if (!dateKey || !String(body || '').trim()) {
+    throw new Error('dateKey and body are required');
+  }
+
+  const trimmed = String(body).trim();
+  const id =
+    eventId ||
+    `$recovered-${dateKey}-${Date.now().toString(36)}`;
+
+  const existing = await RoomMessage.findOne({
+    dateKey,
+    body: trimmed,
+    direction: 'in',
+    deletedAt: { $exists: false },
+  });
+
+  let saved = existing;
+  if (!saved) {
+    saved = await RoomMessage.create({
+      eventId: id,
+      dateKey,
+      roomId: config.matrix.roomId,
+      senderId: senderId || '@unknown:matrix.org',
+      senderName,
+      body: trimmed,
+      direction: 'in',
+      category: 'team_review',
+      messageType: 'm.text',
+      sentAt: sentAt ? new Date(sentAt) : new Date(),
+    });
+  }
+
+  const result = await recordReviewFromMessage(trimmed, dateKey, saved.eventId);
+  await recomputeReviewedMembers(dateKey);
+
+  let leadSync = null;
+  if (result?.status === 'success' || result?.status === 'duplicate_pair') {
+    const pair = result.matchedPair || saved.matchedPair;
+    if (pair?.length) {
+      leadSync = await syncLeadSessionAfterLateReview(dateKey, pair);
+    }
+  }
+
+  return {
+    message: saved,
+    reviewResult: result,
+    leadSync: leadSync
+      ? { status: leadSync.status || leadSync.stage || 'ok' }
+      : null,
+  };
+};

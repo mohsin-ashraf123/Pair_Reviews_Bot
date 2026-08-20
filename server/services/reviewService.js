@@ -25,11 +25,32 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Take the name line from messages like "Uzair + Faz Pair Review Done". */
 export const extractReviewNameLine = (body) => {
-  const firstLine = body.trim().split('\n')[0].trim();
-  const suffixMatch = firstLine.match(
-    /^(.+?)(?:\s+pair\s+review|\s+review\s+done|\s+review\b)/i
-  );
-  return (suffixMatch ? suffixMatch[1] : firstLine).trim();
+  const lines = String(body || '')
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return '';
+
+  const stripSuffix = (line) => {
+    const suffixMatch = line.match(
+      /^(.+?)(?:\s+pair\s+review|\s+review\s+done|\s+review\b)/i
+    );
+    return (suffixMatch ? suffixMatch[1] : line).trim();
+  };
+
+  // Prefer a line that looks like "Name + Name" with ≥2 known members.
+  for (const line of lines.slice(0, 4)) {
+    if (!/\+/.test(line)) continue;
+    const cleaned = stripSuffix(line);
+    const members = getAllMembers();
+    const hits = members.filter((name) =>
+      new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i').test(cleaned)
+    );
+    if (hits.length >= 2) return cleaned;
+  }
+
+  return stripSuffix(lines[0]);
 };
 
 /** Parse team member names mentioned in the review message line. */
