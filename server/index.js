@@ -33,6 +33,16 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     message: 'Element Pair Review Bot API',
     uptime: process.uptime(),
+    commit:
+      process.env.RAILWAY_GIT_COMMIT_SHA ||
+      process.env.GITHUB_SHA ||
+      null,
+    features: {
+      pairThread: Boolean(config.enablePairThread),
+      reviewReminder: Boolean(config.enableReviewReminder),
+      cronScheduler: Boolean(config.enableCronScheduler),
+      matrixBot: Boolean(config.runMatrixBot),
+    },
   });
 });
 

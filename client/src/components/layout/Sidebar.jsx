@@ -1,10 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE } from '../../config/api.js';
 
-const navItems = [
+const allNavItems = [
   { label: 'Overview', short: 'Home', to: '/dashboard', icon: 'home' },
   { label: 'Pairs', short: 'Pairs', to: '/dashboard/pairs', icon: 'pairs' },
-  { label: 'Threads', short: 'Threads', to: '/dashboard/threads', icon: 'threads' },
+  { label: 'Threads', short: 'Threads', to: '/dashboard/threads', icon: 'threads', feature: 'pairThread' },
   { label: 'History', short: 'History', to: '/dashboard/history', icon: 'history' },
   { label: 'Performance', short: 'Stats', to: '/dashboard/performance', icon: 'stats' },
   { label: 'Member Rooms', short: 'Rooms', to: '/dashboard/members', icon: 'rooms' },
@@ -111,6 +113,32 @@ function NavIcon({ name, active, size = 18 }) {
 function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [features, setFeatures] = useState({ pairThread: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/health`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.features) return;
+        setFeatures({
+          pairThread: Boolean(data.features.pairThread),
+          reviewReminder: Boolean(data.features.reviewReminder),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navItems = useMemo(
+    () =>
+      allNavItems.filter(
+        (item) => !item.feature || features[item.feature]
+      ),
+    [features]
+  );
 
   const handleLogout = () => {
     logout();

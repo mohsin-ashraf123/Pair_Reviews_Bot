@@ -576,6 +576,22 @@ export const getMemberRoomMessages = (roomId, limit = 20) =>
 
 const decryptPromptSent = new Set();
 let matrixListenerRegistered = false;
+let mainRoomReconcileTimer = null;
+
+const scheduleMainRoomReconcile = (client) => {
+  if (mainRoomReconcileTimer) return;
+  mainRoomReconcileTimer = setTimeout(async () => {
+    mainRoomReconcileTimer = null;
+    try {
+      await reconcileMainRoomReviews(client, { limit: 50 });
+    } catch (error) {
+      console.warn(`[room] Scheduled reconcile failed: ${error.message}`);
+    }
+  }, 2500);
+  if (typeof mainRoomReconcileTimer.unref === 'function') {
+    mainRoomReconcileTimer.unref();
+  }
+};
 
 /**
  * Pull recent personal-room timeline events and feed any missed member replies
@@ -812,6 +828,13 @@ export const registerMatrixRoomListener = async (client) => {
       console.warn(
         `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
       );
+
+      // Main Pair Reviews: retry via timeline reconcile (reviews land here).
+      if (roomId === config.matrix.roomId) {
+        scheduleMainRoomReconcile(client);
+        return;
+      }
+
       if (!isMemberRoom(roomId)) return;
 
       const member = getMemberForRoomId(roomId);

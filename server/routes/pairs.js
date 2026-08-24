@@ -117,6 +117,10 @@ router.get('/dashboard', async (req, res) => {
       review,
       messages,
       schedules,
+      features: {
+        pairThread: Boolean(config.enablePairThread),
+        reviewReminder: Boolean(config.enableReviewReminder),
+      },
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -334,6 +338,26 @@ router.post('/reviews/recover', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+/** Pull recent main-room Matrix messages the bot may have missed (decrypt/sync gaps). */
+router.post('/room/reconcile', async (req, res) => {
+  try {
+    const { getMatrixClient } = await import('../services/matrixService.js');
+    const { reconcileMainRoomReviews } = await import(
+      '../services/roomMessageService.js'
+    );
+    const client = await getMatrixClient();
+    const limit = Math.min(Number(req.body?.limit) || 80, 120);
+    const result = await reconcileMainRoomReviews(client, { limit });
+    const { getTodayReviewState } = await import('../services/reviewService.js');
+    res.json({
+      ...result,
+      review: await getTodayReviewState(),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
