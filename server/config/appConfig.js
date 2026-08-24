@@ -104,28 +104,39 @@ const resolveMorningSchedules = () => {
 
 const morningSchedules = resolveMorningSchedules();
 
+const onRailway = Boolean(
+  process.env.RAILWAY_ENVIRONMENT ||
+    process.env.RAILWAY_PROJECT_ID ||
+    process.env.RAILWAY_SERVICE_ID
+);
+
 export const config = {
   developers: parseList(process.env.DEVELOPERS, [
     'Uzair', 'Mohsin', 'Saad', 'Farhan', 'Faz', 'Hamza',
   ]),
   qaTeam: parseList(process.env.QA_TEAM, ['Habiba', 'Aqeel', 'Adil']),
   timezone: process.env.CRON_TIMEZONE || 'Asia/Karachi',
-  enableCronScheduler: process.env.ENABLE_CRON_SCHEDULER !== 'false',
   /**
-   * Only the production host should open the Matrix E2EE client / password-login.
-   * Local with ENABLE_CRON_SCHEDULER=false skips this so Element does not get
-   * endless new "Element Pair Review Bot" sessions ("It was me" popups).
-   * Override with MATRIX_RUN_BOT=true|false if needed.
+   * Local: set ENABLE_CRON_SCHEDULER=false to avoid dual Element devices.
+   * Railway: cron stays ON (use ENABLE_CRON_SCHEDULER=off only to force-disable).
+   */
+  enableCronScheduler: onRailway
+    ? String(process.env.ENABLE_CRON_SCHEDULER || '').toLowerCase() !== 'off'
+    : process.env.ENABLE_CRON_SCHEDULER !== 'false',
+  /**
+   * Only one host should own the Matrix E2EE client / password-login.
+   * Local with ENABLE_CRON_SCHEDULER=false skips Matrix.
+   * Railway always runs the bot unless MATRIX_RUN_BOT=false.
    */
   runMatrixBot:
     process.env.MATRIX_RUN_BOT === 'true' ||
     (process.env.MATRIX_RUN_BOT !== 'false' &&
-      process.env.ENABLE_CRON_SCHEDULER !== 'false'),
+      (onRailway || process.env.ENABLE_CRON_SCHEDULER !== 'false')),
   /** Password login creates a new Element device — only when running the bot. */
   allowMatrixPasswordLogin:
     process.env.MATRIX_ALLOW_PASSWORD_LOGIN === 'true' ||
     (process.env.MATRIX_ALLOW_PASSWORD_LOGIN !== 'false' &&
-      process.env.ENABLE_CRON_SCHEDULER !== 'false'),
+      (onRailway || process.env.ENABLE_CRON_SCHEDULER !== 'false')),
   cronSchedule: morningSchedules.dailyPairs,
   /** 6:50 PM main-room reminder + lead nudge — off unless explicitly enabled. */
   enableReviewReminder: process.env.ENABLE_REVIEW_REMINDER === 'true',
