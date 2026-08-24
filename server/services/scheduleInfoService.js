@@ -510,13 +510,13 @@ const buildScheduledMessagesInfo = async () => {
   return {
     timezone: config.timezone,
     schedules: [
-      pairThread,
+      ...(config.enablePairThread ? [pairThread] : []),
       leadFollowUps,
       missedNotice,
       dailyPairs,
       discussion,
       bossReport,
-      reminder,
+      ...(config.enableReviewReminder ? [reminder] : []),
     ],
   };
 };

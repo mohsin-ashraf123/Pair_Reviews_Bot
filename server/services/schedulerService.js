@@ -102,53 +102,63 @@ export const startPairScheduler = () => {
     console.log(`Pair scheduler active: "${config.cronSchedule}" (${config.timezone})`);
   }
 
-  if (cron.validate(config.reminderCronSchedule) && !reminderTask) {
-    reminderTask = cron.schedule(
-      config.reminderCronSchedule,
-      () =>
-        runCronJob('reminder', async () => {
-          try {
-            const result = await sendReviewReminder('cron');
-            if (result.skipped) {
-              console.log(`[cron] Reminder skipped: ${result.reason}`);
-            } else {
-              console.log(`[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`);
+  if (config.enableReviewReminder) {
+    if (cron.validate(config.reminderCronSchedule) && !reminderTask) {
+      reminderTask = cron.schedule(
+        config.reminderCronSchedule,
+        () =>
+          runCronJob('reminder', async () => {
+            try {
+              const result = await sendReviewReminder('cron');
+              if (result.skipped) {
+                console.log(`[cron] Reminder skipped: ${result.reason}`);
+              } else {
+                console.log(
+                  `[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`
+                );
+              }
+            } catch (error) {
+              console.error('[cron] Failed to send review reminder:', error.message);
             }
-          } catch (error) {
-            console.error('[cron] Failed to send review reminder:', error.message);
-          }
-        }),
-      { timezone: config.timezone }
-    );
-    console.log(
-      `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
-    );
+          }),
+        { timezone: config.timezone }
+      );
+      console.log(
+        `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
+      );
+    }
+  } else {
+    console.log('[cron] Review reminder disabled (ENABLE_REVIEW_REMINDER≠true)');
   }
 
-  if (cron.validate(config.pairThreadCronSchedule) && !pairThreadTask) {
-    pairThreadTask = cron.schedule(
-      config.pairThreadCronSchedule,
-      () =>
-        runCronJob('pairThread', async () => {
-          try {
-            const result = await postPairReviewThreadDigest('cron');
-            if (result.skipped) {
-              console.log(`[cron] Pair review thread skipped: ${result.reason}`);
-            } else {
-              console.log(
-                `[cron] Pair review thread posted for ${result.reviewDateKey} ` +
-                  `(${result.postedCount} replies)`
-              );
+  if (config.enablePairThread) {
+    if (cron.validate(config.pairThreadCronSchedule) && !pairThreadTask) {
+      pairThreadTask = cron.schedule(
+        config.pairThreadCronSchedule,
+        () =>
+          runCronJob('pairThread', async () => {
+            try {
+              const result = await postPairReviewThreadDigest('cron');
+              if (result.skipped) {
+                console.log(`[cron] Pair review thread skipped: ${result.reason}`);
+              } else {
+                console.log(
+                  `[cron] Pair review thread posted for ${result.reviewDateKey} ` +
+                    `(${result.postedCount} replies)`
+                );
+              }
+            } catch (error) {
+              console.error('[cron] Failed to post pair review thread:', error.message);
             }
-          } catch (error) {
-            console.error('[cron] Failed to post pair review thread:', error.message);
-          }
-        }),
-      { timezone: config.timezone }
-    );
-    console.log(
-      `Pair review thread scheduler active: "${config.pairThreadCronSchedule}" (${config.timezone})`
-    );
+          }),
+        { timezone: config.timezone }
+      );
+      console.log(
+        `Pair review thread scheduler active: "${config.pairThreadCronSchedule}" (${config.timezone})`
+      );
+    }
+  } else {
+    console.log('[cron] Pair review thread disabled (ENABLE_PAIR_THREAD≠true)');
   }
 
   if (cron.validate(config.missingReviewPromptCronSchedule) && !promptTask) {

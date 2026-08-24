@@ -434,7 +434,7 @@ function Overview() {
                 <h2>Review status</h2>
                 <p className="ov-hint">
                   {review?.active
-                    ? 'Pending before 6:50 PM reminder'
+                    ? 'Pending pair reviews for today'
                     : 'Opens after today’s pairs are sent'}
                 </p>
               </div>

@@ -127,11 +127,14 @@ export const config = {
     (process.env.MATRIX_ALLOW_PASSWORD_LOGIN !== 'false' &&
       process.env.ENABLE_CRON_SCHEDULER !== 'false'),
   cronSchedule: morningSchedules.dailyPairs,
+  /** 6:50 PM main-room reminder + lead nudge — off unless explicitly enabled. */
+  enableReviewReminder: process.env.ENABLE_REVIEW_REMINDER === 'true',
   reminderCronSchedule: process.env.REMINDER_CRON_SCHEDULE || '50 18 * * 1-5',
   missedReviewCronSchedule: morningSchedules.missedReview,
   missingReviewPromptCronSchedule: morningSchedules.prompt,
   discussionCronSchedule: process.env.DISCUSSION_PROMPT_CRON_SCHEDULE || '0 17 * * 1-5',
   /** Yesterday's pair reviews → Element thread under Pairs Today (Mon–Fri 10:00 AM) */
+  enablePairThread: process.env.ENABLE_PAIR_THREAD === 'true',
   pairThreadCronSchedule:
     process.env.PAIR_THREAD_CRON_SCHEDULE || '0 10 * * 1-5',
   // Sir AI report: prepare 5:58 PM, send 6:00 PM (Mon–Fri)

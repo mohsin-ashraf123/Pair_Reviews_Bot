@@ -365,15 +365,17 @@ export const getNextCronTarget = (
 /** Countdown chips for every automated message the bot sends. */
 export const getAllScheduleCountdowns = (date = new Date()) => {
   const jobs = [
-    {
-      id: 'pair_review_thread',
-      title: 'Review thread digest',
-      destination: 'Main room — under yesterday’s Pairs Today',
-      destinationKind: 'main',
-      cron: config.pairThreadCronSchedule,
-      fallbackHour: 10,
-      fallbackMinute: 0,
-    },
+    config.enablePairThread
+      ? {
+          id: 'pair_review_thread',
+          title: 'Review thread digest',
+          destination: 'Main room — under yesterday’s Pairs Today',
+          destinationKind: 'main',
+          cron: config.pairThreadCronSchedule,
+          fallbackHour: 10,
+          fallbackMinute: 0,
+        }
+      : null,
     {
       id: 'missing_review_prompts',
       title: 'Lead team report',
@@ -419,16 +421,18 @@ export const getAllScheduleCountdowns = (date = new Date()) => {
       fallbackHour: 18,
       fallbackMinute: 0,
     },
-    {
-      id: 'review_reminder',
-      title: 'Review reminder',
-      destination: 'Main room + today’s lead',
-      destinationKind: 'main',
-      cron: config.reminderCronSchedule,
-      fallbackHour: 18,
-      fallbackMinute: 50,
-    },
-  ];
+    config.enableReviewReminder
+      ? {
+          id: 'review_reminder',
+          title: 'Review reminder',
+          destination: 'Main room + today’s lead',
+          destinationKind: 'main',
+          cron: config.reminderCronSchedule,
+          fallbackHour: 18,
+          fallbackMinute: 50,
+        }
+      : null,
+  ].filter(Boolean);
 
   return jobs.map((job) => {
     const target = getNextCronTarget(

@@ -199,6 +199,7 @@ export const seedPairReviewThreadDraft = async ({
   rootBody,
   roomId,
 }) => {
+  if (!config.enablePairThread) return null;
   if (!dateKey || !rootEventId) return null;
 
   const existing = await PairReviewThread.findOne({ reviewDateKey: dateKey });
@@ -237,6 +238,7 @@ export const seedPairReviewThreadDraft = async ({
  * Random chat never appears here (only countsAsReview + matched pairKey).
  */
 export const syncPairReviewThreadDraft = async (dateKey) => {
+  if (!config.enablePairThread) return null;
   if (!dateKey) return null;
 
   const existing = await PairReviewThread.findOne({ reviewDateKey: dateKey });
@@ -302,6 +304,13 @@ export const syncPairReviewThreadDraft = async (dateKey) => {
  * replies under that day's Pairs Today message. Also save to History.
  */
 export const postPairReviewThreadDigest = async (triggeredBy = 'cron') => {
+  if (!config.enablePairThread) {
+    return {
+      skipped: true,
+      reason: 'Pair review thread disabled (ENABLE_PAIR_THREAD≠true)',
+    };
+  }
+
   const sendDateKey = getKarachiDateKey();
 
   if (isNonWorkingDay(sendDateKey) && triggeredBy === 'cron') {

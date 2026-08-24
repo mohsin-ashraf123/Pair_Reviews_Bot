@@ -116,13 +116,15 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
     });
 
     try {
-      const { seedPairReviewThreadDraft } = await import('./pairThreadService.js');
-      await seedPairReviewThreadDraft({
-        dateKey,
-        rootEventId: result.event_id,
-        rootBody: message,
-        roomId: config.matrix.roomId,
-      });
+      if (config.enablePairThread) {
+        const { seedPairReviewThreadDraft } = await import('./pairThreadService.js');
+        await seedPairReviewThreadDraft({
+          dateKey,
+          rootEventId: result.event_id,
+          rootBody: message,
+          roomId: config.matrix.roomId,
+        });
+      }
     } catch (error) {
       console.warn(`[thread] Draft seed failed: ${error.message}`);
     }
@@ -168,6 +170,13 @@ export const sendReviewReminder = async (
   triggeredBy = 'cron',
   { leadOverride = null } = {}
 ) => {
+  if (!config.enableReviewReminder) {
+    return {
+      skipped: true,
+      reason: 'Review reminder disabled (ENABLE_REVIEW_REMINDER≠true)',
+    };
+  }
+
   const dateKey = getKarachiDateKey();
 
   if (isNonWorkingDay(dateKey)) {
