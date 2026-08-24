@@ -494,7 +494,11 @@ export const logOutgoingMessage = async (body, eventId, category = null, meta = 
 export const getLiveRoomMessages = (limit = 50) => {
   const since = new Date(Date.now() - LIVE_WINDOW_MS);
   const personal = Object.values(config.memberRoomMap || {}).filter(Boolean);
-  const query = { sentAt: { $gte: since } };
+  const query = {
+    sentAt: { $gte: since },
+    // Hide re-sends that did not count again (already marked from first submit).
+    reviewIssue: { $nin: ['duplicate_pair'] },
+  };
   // Exclude personal follow-up rooms — live chat is Main Pair Reviews only.
   // Using $nin (not exact MATRIX_ROOM_ID) so Matrix room upgrades still show.
   if (personal.length) {
