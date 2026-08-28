@@ -28,6 +28,7 @@ const HOST = '0.0.0.0';
 app.use(cors());
 app.use(express.json());
 
+/** Liveness — must stay fast even while Matrix crypto is warming. */
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -65,38 +66,34 @@ if (fs.existsSync(clientDist)) {
   console.log('Serving dashboard from client/dist');
 }
 
-const start = async () => {
-  const httpServer = initSocketServer(app);
+/** Never let a background failure take down the HTTP server (→ Railway 502). */
+process.on('uncaughtException', (error) => {
+  console.error('[fatal] uncaughtException:', error?.stack || error);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandledRejection:', reason);
+});
 
-  httpServer.listen(PORT, HOST, () => {
-    console.log(`Server listening on ${HOST}:${PORT}`);
-  });
+const withTimeout = (promise, ms, label) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
 
+const bootBackgroundServices = async () => {
   try {
-    await connectDB();
+    await withTimeout(connectDB(), 30_000, 'MongoDB connect');
     await ensureHolidayCache().catch((error) =>
       console.warn(`[holiday] Cache load failed: ${error.message}`)
     );
-    await seedMemberRooms();
+    await seedMemberRooms().catch((error) =>
+      console.warn(`[member-rooms] Seed failed: ${error.message}`)
+    );
 
-    if (config.runMatrixBot) {
-      // Join personal rooms before crypto warm-up so device lists are available.
-      await joinMemberRooms().catch((error) =>
-        console.error('Member room join failed:', error.message)
-      );
-      await joinBossRoom().catch((error) =>
-        console.error('Boss room join failed:', error.message)
-      );
-      warmMatrixClient().catch((error) =>
-        console.error('Matrix warm failed:', error.message)
-      );
-    } else {
-      console.log(
-        'Matrix bot client skipped (ENABLE_CRON_SCHEDULER=false) — Element session sirf Railway pe chalega, local se naya login nahi.'
-      );
-    }
+    startPairScheduler();
 
-    // Fix reports that were delivered but later mislabeled "failed".
     await healDeliveredBossReports()
       .then((r) => {
         if (r?.modifiedCount) {
@@ -105,15 +102,59 @@ const start = async () => {
           );
         }
       })
-      .catch((error) =>
-        console.warn(`[boss] Heal skipped: ${error.message}`)
-      );
-
-    startPairScheduler();
+      .catch((error) => console.warn(`[boss] Heal skipped: ${error.message}`));
   } catch (error) {
-    console.error('Startup warning:', error.message);
-    console.error('Server is up but DB/Matrix may be unavailable — check Railway Variables.');
+    console.error('Background boot warning:', error.message);
+    console.error(
+      'HTTP server is up but DB/scheduler may be unavailable — check Railway Variables.'
+    );
+    // Still start countdowns so the dashboard isn't fully dead.
+    try {
+      startPairScheduler();
+    } catch {
+      // ignore
+    }
   }
+
+  if (!config.runMatrixBot) {
+    console.log(
+      'Matrix bot client skipped — set MATRIX_RUN_BOT=true on Railway if Element should run here.'
+    );
+    return;
+  }
+
+  // Defer Matrix entirely so crypto/sync cannot stall health checks.
+  setTimeout(() => {
+    (async () => {
+      try {
+        await joinMemberRooms().catch((error) =>
+          console.error('Member room join failed:', error.message)
+        );
+        await joinBossRoom().catch((error) =>
+          console.error('Boss room join failed:', error.message)
+        );
+        await warmMatrixClient();
+      } catch (error) {
+        console.error('Matrix warm failed:', error.message);
+      }
+    })();
+  }, 1500);
+};
+
+const start = async () => {
+  const httpServer = initSocketServer(app);
+
+  await new Promise((resolve) => {
+    httpServer.listen(PORT, HOST, () => {
+      console.log(`Server listening on ${HOST}:${PORT}`);
+      resolve();
+    });
+  });
+
+  // Kick off DB/Matrix after the port is open so Railway health passes.
+  bootBackgroundServices().catch((error) =>
+    console.error('Background boot failed:', error)
+  );
 };
 
 start().catch((error) => {

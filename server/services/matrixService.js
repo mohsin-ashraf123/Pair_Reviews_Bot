@@ -288,8 +288,11 @@ const createEncryptedClient = async (session) => {
 
   await allowUntrustedDeviceKeyShare(client);
 
-  // Let sync establish device lists and Olm sessions
-  await sleep(5000);
+  // Yield so Railway /api/health can answer while sync settles.
+  await sleep(500);
+  await new Promise((r) => setImmediate(r));
+  await sleep(2500);
+  await new Promise((r) => setImmediate(r));
 
   // Ensure all outgoing crypto requests are processed after sync settles
   try {
@@ -519,7 +522,7 @@ export const getMatrixClient = async () => {
 
   if (!config.runMatrixBot) {
     throw new Error(
-      'Matrix bot client disabled on this host (ENABLE_CRON_SCHEDULER=false). Railway chalata hai Element session — local pe naya login nahi hoga.'
+      'Matrix bot client disabled on this host (MATRIX_RUN_BOT=false). Enable it on Railway to sync Element.'
     );
   }
 
