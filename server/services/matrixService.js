@@ -370,11 +370,16 @@ const createEncryptedClient = async (session) => {
 let reconcileTimer = null;
 const scheduleMemberReplyReconcile = (client) => {
   if (reconcileTimer) return;
+  let tick = 0;
   reconcileTimer = setInterval(() => {
     import('./roomMessageService.js')
       .then(async ({ reconcilePendingMemberReplies, reconcileMainRoomReviews }) => {
         await reconcilePendingMemberReplies(client);
-        await reconcileMainRoomReviews(client);
+        // Main room: every ~3 min (not every 45s) — old Megolm history has no keys.
+        tick += 1;
+        if (tick % 4 === 0) {
+          await reconcileMainRoomReviews(client, { limit: 25 });
+        }
       })
       .catch(() => {});
   }, 45_000);

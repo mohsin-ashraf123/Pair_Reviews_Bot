@@ -581,17 +581,21 @@ export const getMemberRoomMessages = (roomId, limit = 20) =>
 const decryptPromptSent = new Set();
 let matrixListenerRegistered = false;
 let mainRoomReconcileTimer = null;
+/** Event ids we already know we cannot decrypt — skip forever this process. */
+const undecryptableEventIds = new Set();
+let lastMainReconcileAt = 0;
+let mainReconcileInFlight = false;
 
 const scheduleMainRoomReconcile = (client) => {
   if (mainRoomReconcileTimer) return;
   mainRoomReconcileTimer = setTimeout(async () => {
     mainRoomReconcileTimer = null;
     try {
-      await reconcileMainRoomReviews(client, { limit: 50 });
+      await reconcileMainRoomReviews(client, { limit: 25 });
     } catch (error) {
       console.warn(`[room] Scheduled reconcile failed: ${error.message}`);
     }
-  }, 2500);
+  }, 8_000);
   if (typeof mainRoomReconcileTimer.unref === 'function') {
     mainRoomReconcileTimer.unref();
   }
@@ -721,25 +725,48 @@ export const reconcilePendingMemberReplies = async (client) => {
 
 /**
  * Backfill missed main-room messages (decrypt lag / sync gaps).
- * Without this, a review can appear in Element but never hit Mongo / attendance.
+ * Only recent events — old history without room keys just spams logs and burns CPU.
  */
-export const reconcileMainRoomReviews = async (client, { limit = 60 } = {}) => {
-  if (!client) return { checked: 0, processed: 0 };
+export const reconcileMainRoomReviews = async (
+  client,
+  { limit = 30, maxAgeMs = 36 * 60 * 60 * 1000 } = {}
+) => {
+  if (!client) return { checked: 0, processed: 0, decryptFailed: 0 };
   const roomId = config.matrix.roomId;
-  if (!roomId) return { checked: 0, processed: 0 };
+  if (!roomId) return { checked: 0, processed: 0, decryptFailed: 0 };
 
-  const botUserId = await client.getUserId();
+  // Avoid overlapping reconcile loops (startup + interval + decrypt-fail).
+  if (mainReconcileInFlight) {
+    return { checked: 0, processed: 0, decryptFailed: 0, skipped: true };
+  }
+  const now = Date.now();
+  if (now - lastMainReconcileAt < 60_000) {
+    return { checked: 0, processed: 0, decryptFailed: 0, skipped: true };
+  }
+
+  mainReconcileInFlight = true;
+  lastMainReconcileAt = now;
+
   let processed = 0;
+  let decryptFailed = 0;
+  const oldestAllowed = now - maxAgeMs;
 
   try {
+    const botUserId = await client.getUserId();
     const res = await client.doRequest(
       'GET',
       `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages`,
-      { dir: 'b', limit: Math.min(Number(limit) || 60, 100) }
+      { dir: 'b', limit: Math.min(Number(limit) || 30, 50) }
     );
 
     const chunk = [...(res?.chunk || [])].reverse();
     for (const raw of chunk) {
+      const eventId = raw?.event_id;
+      const ts = Number(raw?.origin_server_ts || 0);
+      if (ts && ts < oldestAllowed) continue;
+      if (eventId && undecryptableEventIds.has(eventId)) continue;
+      if (eventId && seenEvents.has(eventId)) continue;
+
       let event = raw;
 
       if (event.type === 'm.room.encrypted' && client.crypto) {
@@ -753,10 +780,9 @@ export const reconcileMainRoomReviews = async (client, { limit = 60 } = {}) => {
               roomId
             )
           ).raw;
-        } catch (error) {
-          console.warn(
-            `[room] Main reconcile decrypt failed: ${error.message}`
-          );
+        } catch {
+          if (eventId) undecryptableEventIds.add(eventId);
+          decryptFailed += 1;
           continue;
         }
       }
@@ -781,12 +807,19 @@ export const reconcileMainRoomReviews = async (client, { limit = 60 } = {}) => {
     }
   } catch (error) {
     console.warn(`[room] Main reconcile failed: ${error.message}`);
+  } finally {
+    mainReconcileInFlight = false;
   }
 
-  if (processed) {
-    console.log(`[room] Main reconcile processed ${processed} missed message(s)`);
+  if (processed || decryptFailed) {
+    console.log(
+      `[room] Main reconcile: processed=${processed}, undecryptable_skipped=${decryptFailed}` +
+        (undecryptableEventIds.size
+          ? ` (cache=${undecryptableEventIds.size})`
+          : '')
+    );
   }
-  return { checked: 1, processed };
+  return { checked: 1, processed, decryptFailed };
 };
 
 export const registerMatrixRoomListener = async (client) => {
@@ -829,15 +862,18 @@ export const registerMatrixRoomListener = async (client) => {
 
   client.on('room.failed_decryption', async (roomId, event, err) => {
     try {
-      console.warn(
-        `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
-      );
+      const eventId = event?.event_id;
+      if (eventId) undecryptableEventIds.add(eventId);
 
-      // Main Pair Reviews: retry via timeline reconcile (reviews land here).
+      // Main Pair Reviews: one quiet reconcile pass (old Megolm history has no keys).
       if (roomId === config.matrix.roomId) {
         scheduleMainRoomReconcile(client);
         return;
       }
+
+      console.warn(
+        `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
+      );
 
       if (!isMemberRoom(roomId)) return;
 
