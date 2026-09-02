@@ -12,6 +12,7 @@ const allNavItems = [
   { label: 'Member Rooms', short: 'Rooms', to: '/dashboard/members', icon: 'rooms' },
   { label: 'Lead Reports', short: 'Leads', to: '/dashboard/leads', icon: 'leads' },
   { label: 'AI Analyzed', short: 'AI', to: '/dashboard/ai', icon: 'ai' },
+  { label: 'Ranking', short: 'Rank', to: '/dashboard/ranking', icon: 'ranking' },
   { label: 'Settings', short: 'Settings', to: '/dashboard/settings', icon: 'settings' },
 ];
 
@@ -103,6 +104,17 @@ function NavIcon({ name, active, size = 18 }) {
         <svg {...props}>
           <circle cx="12" cy="12" r="3" />
           <path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+        </svg>
+      );
+    case 'ranking':
+      return (
+        <svg {...props}>
+          <path d="M6 9H4.5a1.5 1.5 0 0 1 0-3H6" />
+          <path d="M18 9h1.5a1.5 1.5 0 0 0 0-3H18" />
+          <path d="M4 22h16" />
+          <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22" />
+          <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22" />
+          <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
         </svg>
       );
     default:

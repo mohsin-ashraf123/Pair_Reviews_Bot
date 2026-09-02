@@ -12,7 +12,13 @@ import {
   sendBossDailyReport,
 } from './bossReportService.js';
 import { postPairReviewThreadDigest } from './pairThreadService.js';
-import { getNextDailySendTarget, getAllScheduleCountdowns } from './pairService.js';
+import {
+  processDateReviews,
+  isLastWorkingDayOfMonth,
+  generateMonthlyReport,
+  sendMonthlyReport,
+} from './rankingService.js';
+import { getNextDailySendTarget, getAllScheduleCountdowns, getKarachiDateKey } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
 
 let pairsTask = null;
@@ -23,6 +29,7 @@ let discussionTask = null;
 let bossPrepareTask = null;
 let bossSendTask = null;
 let pairThreadTask = null;
+let rankingProcessTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
@@ -34,6 +41,7 @@ const cronInFlight = {
   bossPrepare: false,
   bossSend: false,
   pairThread: false,
+  rankingProcess: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -284,6 +292,45 @@ export const startPairScheduler = () => {
     );
     console.log(
       `Boss report send scheduler active: "${config.bossReportSendCronSchedule}" (${config.timezone})`
+    );
+  }
+
+  // --- Ranking: daily review processing + monthly report ---
+  if (cron.validate(config.rankingProcessCronSchedule) && !rankingProcessTask) {
+    rankingProcessTask = cron.schedule(
+      config.rankingProcessCronSchedule,
+      () =>
+        runCronJob('rankingProcess', async () => {
+          try {
+            const dateKey = getKarachiDateKey();
+            const result = await processDateReviews(dateKey);
+            if (result.skipped) {
+              console.log(`[cron] Ranking process skipped: ${result.skipped}`);
+            } else {
+              console.log(
+                `[cron] Ranking: processed ${result.processed} member insights for ${dateKey}`
+              );
+            }
+
+            // Check if today is the last working day of the month
+            if (isLastWorkingDayOfMonth()) {
+              console.log('[cron] Last working day — generating monthly ranking report');
+              try {
+                await generateMonthlyReport();
+                await sendMonthlyReport();
+                console.log('[cron] Monthly ranking report generated and sent');
+              } catch (reportErr) {
+                console.error('[cron] Monthly ranking report failed:', reportErr.message);
+              }
+            }
+          } catch (error) {
+            console.error('[cron] Ranking process failed:', error.message);
+          }
+        }),
+      { timezone: config.timezone }
+    );
+    console.log(
+      `Ranking process scheduler active: "${config.rankingProcessCronSchedule}" (${config.timezone})`
     );
   }
 

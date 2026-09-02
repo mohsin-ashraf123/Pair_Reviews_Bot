@@ -153,6 +153,9 @@ export const config = {
     process.env.BOSS_REPORT_PREPARE_CRON_SCHEDULE || '58 17 * * 1-5',
   bossReportSendCronSchedule:
     process.env.BOSS_REPORT_SEND_CRON_SCHEDULE || '0 18 * * 1-5',
+  // Monthly ranking: process daily reviews at 6:30 PM (Mon–Fri)
+  rankingProcessCronSchedule:
+    process.env.RANKING_PROCESS_CRON_SCHEDULE || '30 18 * * 1-5',
   memberMatrixMap: parseMemberMatrixMap(process.env.MEMBER_MATRIX_MAP),
   memberRoomMap: parseMemberRoomMap(process.env.MEMBER_ROOM_MAP),
   matrix: {

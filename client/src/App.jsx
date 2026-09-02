@@ -10,6 +10,7 @@ import Performance from './pages/Performance';
 import MemberRooms from './pages/MemberRooms';
 import LeadReports from './pages/LeadReports';
 import AiAnalyzed from './pages/AiAnalyzed';
+import Ranking from './pages/Ranking';
 import Settings from './pages/Settings';
 
 function ProtectedRoute({ children }) {
@@ -49,6 +50,7 @@ function App() {
         <Route path="members" element={<MemberRooms />} />
         <Route path="leads" element={<LeadReports />} />
         <Route path="ai" element={<AiAnalyzed />} />
+        <Route path="ranking" element={<Ranking />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

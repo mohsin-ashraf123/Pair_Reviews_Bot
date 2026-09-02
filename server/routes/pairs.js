@@ -43,6 +43,15 @@ import {
   getPairReviewThreadDetail,
   postPairReviewThreadDigest,
 } from '../services/pairThreadService.js';
+import {
+  getMonthlyRankingData,
+  getMonthlyInsights,
+  getRankingScheduleInfo,
+  processDateReviews,
+  generateMonthlyReport,
+  sendMonthlyReport,
+  backfillDateRange,
+} from '../services/rankingService.js';
 
 const router = express.Router();
 
@@ -862,6 +871,98 @@ router.post('/ai/analyze', async (req, res) => {
     res.json(await analyzeMeetingDay(dateKey));
   } catch (error) {
     res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Ranking API                                                        */
+/* ------------------------------------------------------------------ */
+
+router.get('/ranking', async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    let monthKey;
+    if (year && month) {
+      monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    }
+    res.json(await getMonthlyRankingData(monthKey));
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+router.get('/ranking/insights', async (req, res) => {
+  try {
+    const { year, month, member } = req.query;
+    let monthKey;
+    if (year && month) {
+      monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    }
+    res.json(await getMonthlyInsights(monthKey, member || undefined));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/ranking/schedule', async (req, res) => {
+  try {
+    res.json(await getRankingScheduleInfo());
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/ranking/process', async (req, res) => {
+  try {
+    const dateKey =
+      typeof req.body?.dateKey === 'string' && req.body.dateKey.trim()
+        ? req.body.dateKey.trim()
+        : undefined;
+    if (!dateKey) {
+      return res.status(400).json({ message: 'dateKey is required' });
+    }
+    res.json(await processDateReviews(dateKey));
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/ranking/generate', async (req, res) => {
+  try {
+    const { year, month } = req.body || {};
+    let monthKey;
+    if (year && month) {
+      monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    }
+    const result = await generateMonthlyReport(monthKey);
+    res.json(result);
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/ranking/send', async (req, res) => {
+  try {
+    const { year, month } = req.body || {};
+    let monthKey;
+    if (year && month) {
+      monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    }
+    res.json(await sendMonthlyReport(monthKey));
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/ranking/backfill', async (req, res) => {
+  try {
+    const startDateKey =
+      typeof req.body?.startDateKey === 'string' && req.body.startDateKey.trim()
+        ? req.body.startDateKey.trim()
+        : '2026-09-01';
+    res.json(await backfillDateRange(startDateKey));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
