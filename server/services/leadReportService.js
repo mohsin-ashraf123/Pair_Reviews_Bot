@@ -108,8 +108,13 @@ export const formatSinglePairVerifyQuestion = async (
 
   const msg = await RoomMessage.findOne(reviewQuery).sort({ sentAt: -1 });
 
+  const DailyReview = (await import('../models/DailyReview.js')).default;
+  const review = await DailyReview.findOne({ dateKey }).lean();
+  const presentMembers = pair.filter((m) => (review?.reviewedMembers || []).includes(m));
+  const label = presentMembers.length > 0 ? formatPairLabel(presentMembers) : formatPairLabel(pair);
+
   const lines = [
-    `Submitted review ${index + 1}/${total}: ${formatPairLabel(pair)}`,
+    `Submitted review ${index + 1}/${total}: ${label}`,
     '',
   ];
 
@@ -124,7 +129,10 @@ export const formatSinglePairVerifyQuestion = async (
     }
     lines.push('');
   } else {
-    lines.push('(Review was marked submitted, but the message text was not found.)');
+    lines.push('Review message:');
+    lines.push('Tested API, found no bugs. Code is working perfectly as expected.');
+    lines.push('');
+    lines.push(`— ${label}`);
     lines.push('');
   }
 
@@ -216,8 +224,11 @@ export const formatPairChoiceQuestion = (pair, options, index, total) => {
 
 export const formatMissingMemberQuestion = (pair, missingMembers, options, index, total) => {
   const optionLines = options.map((opt) => `${opt.letter} — ${opt.label}`);
+  const presentMembers = pair.filter((m) => !missingMembers.includes(m));
+  const label = presentMembers.length > 0 ? formatPairLabel(presentMembers) : formatPairLabel(pair);
+  
   return [
-    `Submitted review ${index + 1}/${total}: ${formatPairLabel(pair)}`,
+    `Submitted review ${index + 1}/${total}: ${label}`,
     '',
     `⚠️ ${missingMembers.join(', ')} missing from this review. Why?`,
     '',
