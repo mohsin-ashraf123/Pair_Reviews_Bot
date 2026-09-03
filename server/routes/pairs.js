@@ -923,23 +923,23 @@ router.get('/ranking/test_lead', async (req, res) => {
       ['Mohsin', 'Saad']
     ];
     
-    // Randomize the scenario
+    // Randomize the QA pair scenario
     const rand = Math.random();
     let reviewedMembers = [];
     let scenarioName = '';
     
     if (rand < 0.33) {
-      // Scenario 1: Partial QA submission
-      reviewedMembers = ['Habiba', 'Adil', 'Farhan', 'Hamza'];
-      scenarioName = 'Partial QA (Aqeel missing) + Farhan/Hamza fully done';
+      // QA Scenario 1: All 3 members submitted (Full Submission)
+      reviewedMembers = ['Habiba', 'Adil', 'Aqeel', 'Farhan', 'Hamza']; // Farhan/Hamza submitted too
+      scenarioName = 'QA Full Submission (Habiba, Adil, Aqeel)';
     } else if (rand < 0.66) {
-      // Scenario 2: QA pair completely missed
-      reviewedMembers = ['Farhan', 'Mohsin', 'Saad'];
-      scenarioName = 'QA missed completely + Farhan submitted (Hamza missing)';
+      // QA Scenario 2: 2 members submitted, 1 missing (Partial Submission)
+      reviewedMembers = ['Habiba', 'Adil', 'Mohsin', 'Saad']; // Aqeel is missing
+      scenarioName = 'QA Partial Submission (Aqeel missing)';
     } else {
-      // Scenario 3: Lots of missing pairs
-      reviewedMembers = ['Mohsin', 'Saad'];
-      scenarioName = 'Everyone missed except Mohsin+Saad';
+      // QA Scenario 3: Pair completely missed
+      reviewedMembers = ['Farhan', 'Hamza', 'Sheraz', 'Noman']; // QA totally missed
+      scenarioName = 'QA Completely Missed';
     }
     
     review.lead = 'Mohsin';
