@@ -37,9 +37,11 @@ const monthlyRankingReportSchema = new mongoose.Schema(
     modelName: String,
     rankings: { type: [memberRankingSchema], default: [] },
     reportText: { type: String, default: '' },
+    imageBase64: { type: String, default: '' }, // To store the rendered puppeteer image for preview
+    scheduledFor: Date,
     status: {
       type: String,
-      enum: ['generating', 'ready', 'sent', 'failed'],
+      enum: ['generating', 'ready', 'draft', 'scheduled', 'sent', 'failed'],
       default: 'generating',
     },
     error: String,

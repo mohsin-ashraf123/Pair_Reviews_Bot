@@ -25,7 +25,6 @@ import {
 import { savePairRecord, getLastPairRecord, getPairHistory, getPairRecordByDate } from './pairRecordService.js';
 import { claimCronJob, completeCronJob, releaseCronJob } from './cronJobService.js';
 import {
-  sendLeadEveningNudge,
   startLeadMorningReport,
   getLeadReportSummary,
 } from './leadReportService.js';
@@ -165,90 +164,6 @@ export const getDefaultMonthlyPairs = () => {
   return getMonthlyPairs(year, month);
 };
 
-/** Weekday 6:50 PM reminder for pairs with pending reviews. */
-export const sendReviewReminder = async (
-  triggeredBy = 'cron',
-  { leadOverride = null } = {}
-) => {
-  if (!config.enableReviewReminder) {
-    return {
-      skipped: true,
-      reason: 'Review reminder disabled (ENABLE_REVIEW_REMINDER≠true)',
-    };
-  }
-
-  const dateKey = getKarachiDateKey();
-
-  if (isNonWorkingDay(dateKey)) {
-    return {
-      skipped: true,
-      reason: isWeekend(dateKey)
-        ? 'Weekend — no reminder'
-        : 'Holiday — no reminder',
-    };
-  }
-
-  const review = await DailyReview.findOne({ dateKey });
-  if (!review?.pairsSentAt) {
-    return { skipped: true, reason: 'Daily pairs not sent yet' };
-  }
-
-  const pendingPairs = getPendingPairs(review.pairs, review);
-  if (pendingPairs.length === 0) {
-    return { skipped: true, reason: 'All reviews completed', pendingPairs: [] };
-  }
-
-  const jobKey = `review_reminder:${dateKey}`;
-
-  if (triggeredBy === 'cron') {
-    const claimed = await claimCronJob(jobKey, { jobType: 'review_reminder', dateKey });
-    if (!claimed) {
-      return { skipped: true, reason: 'Reminder already sent today' };
-    }
-  } else if (review.reminderSentAt) {
-    return { skipped: true, reason: 'Reminder already sent today' };
-  }
-
-  const message = formatReminderMessage(review.lead, pendingPairs);
-
-  try {
-    const result = await sendMatrixMessage(message, {
-      kind: 'review_reminder',
-      dateKey,
-      triggeredBy,
-    });
-    await logOutgoingMessage(message, result.event_id, 'bot_reminder');
-
-    review.reminderSentAt = new Date();
-    await review.save();
-
-    // Same moment: DM today's lead in their personal room.
-    let leadNudge = null;
-    try {
-      leadNudge = await sendLeadEveningNudge(dateKey, { leadOverride });
-    } catch (nudgeError) {
-      console.error(`[lead-nudge] Failed for ${dateKey}: ${nudgeError.message}`);
-      leadNudge = { skipped: true, reason: nudgeError.message };
-    }
-
-    if (triggeredBy === 'cron') {
-      await completeCronJob(jobKey, result.event_id);
-    }
-
-    return {
-      skipped: false,
-      message,
-      pendingPairs,
-      reviewedMembers: review.reviewedMembers,
-      leadNudge,
-    };
-  } catch (error) {
-    if (triggeredBy === 'cron') {
-      await releaseCronJob(jobKey);
-    }
-    throw error;
-  }
-};
 
 /**
  * Weekday 10:50 AM — DM yesterday's lead only and collect the team report

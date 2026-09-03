@@ -138,9 +138,6 @@ export const config = {
     (process.env.MATRIX_ALLOW_PASSWORD_LOGIN !== 'false' &&
       (onRailway || process.env.ENABLE_CRON_SCHEDULER !== 'false')),
   cronSchedule: morningSchedules.dailyPairs,
-  /** 6:50 PM main-room reminder + lead nudge — off unless explicitly enabled. */
-  enableReviewReminder: process.env.ENABLE_REVIEW_REMINDER === 'true',
-  reminderCronSchedule: process.env.REMINDER_CRON_SCHEDULE || '50 18 * * 1-5',
   missedReviewCronSchedule: morningSchedules.missedReview,
   missingReviewPromptCronSchedule: morningSchedules.prompt,
   discussionCronSchedule: process.env.DISCUSSION_PROMPT_CRON_SCHEDULE || '0 17 * * 1-5',
@@ -153,9 +150,9 @@ export const config = {
     process.env.BOSS_REPORT_PREPARE_CRON_SCHEDULE || '58 17 * * 1-5',
   bossReportSendCronSchedule:
     process.env.BOSS_REPORT_SEND_CRON_SCHEDULE || '0 18 * * 1-5',
-  // Monthly ranking: process daily reviews at 6:30 PM (Mon–Fri)
+  // Monthly ranking: process daily reviews at 10:00 PM (Mon–Fri)
   rankingProcessCronSchedule:
-    process.env.RANKING_PROCESS_CRON_SCHEDULE || '30 18 * * 1-5',
+    process.env.RANKING_PROCESS_CRON_SCHEDULE || '0 22 * * 1-5',
   memberMatrixMap: parseMemberMatrixMap(process.env.MEMBER_MATRIX_MAP),
   memberRoomMap: parseMemberRoomMap(process.env.MEMBER_ROOM_MAP),
   matrix: {

@@ -50,10 +50,6 @@ const leadReportSessionSchema = new mongoose.Schema(
     submittedPairs: [[String]],
     pendingPairs: [[String]],
 
-    nudgeSentAt: Date,
-    nudgeEventId: String,
-    nudgeMessage: String,
-
     reportSentAt: Date,
     reportEventId: String,
 

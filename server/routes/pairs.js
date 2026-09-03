@@ -8,10 +8,9 @@ import {
   getDefaultMonthlyPairs,
   sendMissingReviewFollowUps,
   sendMissedReviewNotice,
-  sendReviewReminder,
   sendDiscussionFollowUps,
 } from '../services/pairBotService.js';
-import { sendLeadEveningNudge } from '../services/leadReportService.js';
+
 import { getMemberRoomsOverview } from '../services/memberRoomViewService.js';
 import {
   getLeadReportDetail,
@@ -406,16 +405,7 @@ router.post('/member-rooms/send-prompts', async (req, res) => {
   }
 });
 
-router.post('/member-rooms/send-lead-nudge', async (req, res) => {
-  try {
-    const dateKey = req.body?.dateKey || undefined;
-    const leadOverride = req.body?.lead || null;
-    const result = await sendLeadEveningNudge(dateKey, { leadOverride });
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+
 
 /** Drive a lead personal-room reply through the same handler Matrix uses. */
 router.post('/member-rooms/lead-reply', async (req, res) => {
@@ -579,7 +569,6 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
     } = await import('../services/pairService.js');
     const { getPendingPairs } = await import('../services/reviewService.js');
     const {
-      sendLeadEveningNudge,
       startLeadMorningReport,
       handleLeadReply,
     } = await import('../services/leadReportService.js');
@@ -634,24 +623,10 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
     };
 
     const todayReview = await DailyReview.findOne({ dateKey: todayKey });
-    if (sendNudge) {
-      await ensureReview(todayKey);
-      const nudge = await sendLeadEveningNudge(todayKey, { leadOverride: LEAD });
-      steps.push({
-        step: 'evening_nudge',
-        result: {
-          skipped: nudge.skipped,
-          reason: nudge.reason,
-          message: nudge.message,
-          lead: nudge.lead,
-        },
-      });
-    } else {
-      steps.push({
-        step: 'evening_nudge',
-        result: { skipped: true, reason: 'Skipped — only morning report requested' },
-      });
-    }
+    steps.push({
+      step: 'skip_evening_nudge',
+      result: { skipped: true, reason: 'Evening nudge disabled via test param' },
+    });
 
     await ensureReview(yesterdayKey);
     const report = await startLeadMorningReport(yesterdayKey, {
@@ -766,14 +741,7 @@ router.post('/member-rooms/test-lead-mohsin', async (req, res) => {
   }
 });
 
-router.post('/reminder/send', async (req, res) => {
-  try {
-    const leadOverride = req.body?.lead || null;
-    res.json(await sendReviewReminder('manual', { leadOverride }));
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+
 
 router.post('/missed-review/send', async (req, res) => {
   try {
@@ -907,6 +875,54 @@ router.get('/ranking/insights', async (req, res) => {
 router.get('/ranking/schedule', async (req, res) => {
   try {
     res.json(await getRankingScheduleInfo());
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/ranking/reports', async (req, res) => {
+  try {
+    const MonthlyRankingReport = (await import('../models/MonthlyRankingReport.js')).default;
+    const reports = await MonthlyRankingReport.find()
+      .sort({ monthKey: -1 })
+      .lean();
+    res.json(reports);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.delete('/ranking/reports/:monthKey', async (req, res) => {
+  try {
+    const MonthlyRankingReport = (await import('../models/MonthlyRankingReport.js')).default;
+    const result = await MonthlyRankingReport.deleteOne({ monthKey: req.params.monthKey });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+    res.json({ message: 'Report deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/ranking/test_lead', async (req, res) => {
+  try {
+    const { startLeadMorningReport } = await import('../services/leadReportService.js');
+    const DailyReview = (await import('../models/DailyReview.js')).default;
+    const { getKarachiDateKey } = await import('../services/pairService.js');
+    const dateKey = getKarachiDateKey(); 
+    
+    let review = await DailyReview.findOne({ dateKey });
+    if (!review) review = new DailyReview({ dateKey });
+    
+    review.lead = 'Mohsin';
+    review.pairs = [['Mohsin', 'Adil', 'Aqeel']];
+    review.pairsSentAt = new Date();
+    review.reviewedMembers = ['Mohsin', 'Adil'];
+    await review.save();
+
+    const result = await startLeadMorningReport(dateKey, { leadOverride: 'Mohsin', force: true });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

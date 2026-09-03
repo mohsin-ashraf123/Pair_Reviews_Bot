@@ -15,7 +15,6 @@ const dailyReviewSchema = new mongoose.Schema(
     /** On half day leave — tracked separately from a full absence. */
     halfDayMembers: { type: [String], default: [] },
     pairsSentAt: Date,
-    reminderSentAt: Date,
     missedReviewNoticeSentAt: Date,
     missingReviewPromptsSentAt: Date,
   },

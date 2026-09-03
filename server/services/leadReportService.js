@@ -147,6 +147,7 @@ export const formatMominCheckQuestion = (pair, index, total) =>
 const ACTIVE_LEAD_STAGES = [
   'awaiting_ready',
   'awaiting_verify',
+  'awaiting_missing_member_reason',
   'awaiting_momin_check',
   'awaiting_pair_choice',
   'awaiting_forgot_reason',
@@ -208,6 +209,17 @@ export const formatPairChoiceQuestion = (pair, options, index, total) => {
     `Missing review ${index + 1}/${total}: ${formatPairLabel(pair)}`,
     '',
     `Why was this review missing? ${multiHint}:`,
+    '',
+    ...optionLines,
+  ].join('\n');
+};
+
+export const formatMissingMemberQuestion = (pair, missingMembers, options, index, total) => {
+  const optionLines = options.map((opt) => `${opt.letter} — ${opt.label}`);
+  return [
+    `Submitted review ${index + 1}/${total}: ${formatPairLabel(pair)}`,
+    '',
+    `⚠️ ${missingMembers.join(', ')} missing from this review. Why?`,
     '',
     ...optionLines,
   ].join('\n');
@@ -339,22 +351,33 @@ const missingMembersForPair = (pair = [], review) => {
 
 /** Rebuild attendance from the lead's pair decisions for that day. */
 export const recomputeAttendanceFromLeadReport = async (dateKey) => {
-  const review = await DailyReview.findOne({ dateKey });
+  // First, establish baseline attendance from any individual/partial-QA prompts
+  const { recomputeAttendanceFromPrompts } = await import('./missingReviewPromptService.js');
+  const review = await recomputeAttendanceFromPrompts(dateKey);
   if (!review) return null;
 
   const session = await LeadReportSession.findOne({ dateKey });
   if (!session) return review;
 
-  const absent = new Set();
-  const halfDay = new Set();
-  const late = new Set();
-  const excused = new Set();
+  const absent = new Set(review.absentMembers || []);
+  const halfDay = new Set(review.halfDayMembers || []);
+  const late = new Set(review.lateReviewedMembers || []);
+  const excused = new Set(review.excusedMembers || []);
 
   for (const decision of session.pairDecisions || []) {
     const pair = decision.pair || [];
     if (decision.type === 'forgot') {
       for (const name of pair) late.add(name);
       continue;
+    }
+    for (const name of decision.halfDayMembers || []) halfDay.add(name);
+    for (const name of decision.absentMembers || []) absent.add(name);
+  }
+
+  for (const decision of session.verifyDecisions || []) {
+    if (decision.forgotMissing) {
+      const missing = decision.pair?.filter((m) => !(decision.absentMembers || []).includes(m) && !(decision.halfDayMembers || []).includes(m)) || [];
+      for (const name of missing) late.add(name);
     }
     for (const name of decision.halfDayMembers || []) halfDay.add(name);
     for (const name of decision.absentMembers || []) absent.add(name);
@@ -436,38 +459,6 @@ const ensureSessionFromReview = async (review, { leadOverride = null } = {}) => 
   );
 };
 
-/** 6:50 PM — personal nudge to today's lead (alongside the room reminder). */
-export const sendLeadEveningNudge = async (
-  dateKey = getKarachiDateKey(),
-  { leadOverride = null } = {}
-) => {
-  const review = await DailyReview.findOne({ dateKey });
-  if (!review?.pairsSentAt) {
-    return { skipped: true, reason: 'Daily pairs not sent yet' };
-  }
-
-  const pendingPairs = getPendingPairs(review.pairs, review);
-  if (!pendingPairs.length) {
-    return { skipped: true, reason: 'All reviews completed — no lead nudge' };
-  }
-
-  const session = await ensureSessionFromReview(review, { leadOverride });
-  if (session.nudgeSentAt) {
-    return { skipped: true, reason: 'Lead evening nudge already sent', session };
-  }
-
-  const message = formatLeadEveningNudge(session.lead, dateKey, pendingPairs);
-  const result = await sendToLead(session, message, 'bot_dm_prompt');
-
-  session.nudgeSentAt = new Date();
-  session.nudgeEventId = result.event_id;
-  session.nudgeMessage = message;
-  await session.save();
-
-  emitMemberRoomUpdate({ dateKey, leadReport: session.toObject() });
-
-  return { skipped: false, message, session, lead: session.lead };
-};
 
 /** 10:50 AM — ask yesterday's lead if they are ready to give the report. */
 export const startLeadMorningReport = async (
@@ -657,8 +648,69 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
     session.pendingVerify = {
       pair,
       verified: answer === 'yes',
+      absentMembers: [],
+      halfDayMembers: [],
     };
+
+    // Check if there are missing members in this "submitted" review
+    const DailyReview = (await import('../models/DailyReview.js')).default;
+    const review = await DailyReview.findOne({ dateKey: session.dateKey }).lean();
+    const missingMembers = pair.filter((m) => !(review?.reviewedMembers || []).includes(m));
+
+    if (missingMembers.length > 0) {
+      session.stage = 'awaiting_missing_member_reason';
+      session.currentPairOptions = buildLeadPairOptions(pair, missingMembers);
+      session.markModified('pendingVerify');
+      await session.save();
+      
+      const question = formatMissingMemberQuestion(pair, missingMembers, session.currentPairOptions, session.currentVerifyIndex, (session.submittedPairs || []).length);
+      await sendToLead(session, question, 'bot_dm_prompt');
+      emitMemberRoomUpdate({ dateKey: session.dateKey, leadReport: session.toObject() });
+      return { status: 'awaiting_missing_member_reason', ack: null };
+    }
+
     session.markModified('pendingVerify');
+    await session.save();
+    return askMominCheckForCurrentPair(session);
+  }
+
+  if (session.stage === 'awaiting_missing_member_reason') {
+    const letters = parseOptions(body);
+    if (!letters.length) {
+      return {
+        status: 'invalid',
+        ack: 'Please reply with the letter(s) of your choice.',
+      };
+    }
+
+    const matched = letters
+      .map((letter) => session.currentPairOptions.find((o) => o.letter === letter))
+      .filter(Boolean);
+
+    if (matched.length !== letters.length) {
+      return {
+        status: 'invalid',
+        ack: 'One or more letters are invalid. Please reply only with the letters from the options above.',
+      };
+    }
+
+    const isForgot = matched.some((opt) => opt.type === 'forgot');
+    
+    // Save their absence logic to the verify decision
+    if (session.pendingVerify) {
+      if (isForgot) {
+        // Technically they forgot. But we just save it.
+        session.pendingVerify.forgotMissing = true;
+      }
+      session.pendingVerify.absentMembers = [
+        ...new Set(matched.flatMap((opt) => opt.absentMembers || [])),
+      ];
+      session.pendingVerify.halfDayMembers = [
+        ...new Set(matched.flatMap((opt) => opt.halfDayMembers || [])),
+      ];
+      session.markModified('pendingVerify');
+    }
+    
     await session.save();
     return askMominCheckForCurrentPair(session);
   }

@@ -578,6 +578,27 @@ export const sendMatrixMessage = async (body, meta = {}) => {
   }
 };
 
+/**
+ * Upload a buffer as media and send it to the main Pair Reviews room as an image.
+ */
+export const sendMatrixImage = async (buffer, filename = 'image.png', mimeType = 'image/png') => {
+  const roomId = config.matrix.roomId;
+  try {
+    const client = await getMatrixClient();
+    const mxcUrl = await client.uploadContent(buffer, mimeType, filename);
+    const eventId = await client.sendMessage(roomId, {
+      msgtype: 'm.image',
+      body: filename,
+      url: mxcUrl,
+      info: { mimetype: mimeType }
+    });
+    return { event_id: eventId };
+  } catch (error) {
+    console.error('[matrix] Failed to send image:', error);
+    throw error;
+  }
+};
+
 /** Send to any room the bot has joined (member follow-up rooms). */
 export const sendMatrixMessageToRoom = async (roomId, body, meta = {}) => {
   if (!roomId) throw new Error('roomId is required');

@@ -36,6 +36,7 @@ function Ranking() {
   const [data, setData] = useState(null);
   const [insights, setInsights] = useState(null);
   const [schedule, setSchedule] = useState(null);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
@@ -51,15 +52,17 @@ function Ranking() {
     setError('');
     try {
       const params = year && month ? { year, month } : undefined;
-      const [rankRes, insightRes, schedRes] = await Promise.all([
+      const [rankRes, insightRes, schedRes, reportsRes] = await Promise.all([
         axios.get(`${API}/ranking`, { params }),
         axios.get(`${API}/ranking/insights`, { params }),
         axios.get(`${API}/ranking/schedule`),
+        axios.get(`${API}/ranking/reports`)
       ]);
 
       setData(rankRes.data);
       setInsights(insightRes.data);
       setSchedule(schedRes.data);
+      setReports(reportsRes.data || []);
       setSelected(`${rankRes.data.year}-${rankRes.data.month}`);
     } catch (err) {
       setData(null);
@@ -104,8 +107,12 @@ function Ranking() {
     setProcessing(true);
     setActionMsg('');
     try {
+      const year = data?.year || new Date().getFullYear();
+      const month = String(data?.month || new Date().getMonth() + 1).padStart(2, '0');
+      const startDateKey = `${year}-${month}-01`;
+
       const res = await axios.post(`${API}/ranking/backfill`, {
-        startDateKey: '2026-09-01',
+        startDateKey,
       });
       const count = res.data?.results?.length || 0;
       setActionMsg(`✅ Backfill complete — ${count} day(s) processed`);
@@ -147,6 +154,21 @@ function Ranking() {
       } else {
         setActionMsg('\u2705 Monthly report sent to Pair Reviews room');
       }
+      loadMonth(data?.year, data?.month);
+    } catch (err) {
+      setActionMsg(`❌ ${err.response?.data?.message || err.message}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDeleteReport = async (monthKey) => {
+    if (!window.confirm(`Are you sure you want to delete the report for ${monthKey}?`)) return;
+    setProcessing(true);
+    setActionMsg('');
+    try {
+      await axios.delete(`${API}/ranking/reports/${monthKey}`);
+      setActionMsg('✅ Report deleted successfully');
       loadMonth(data?.year, data?.month);
     } catch (err) {
       setActionMsg(`❌ ${err.response?.data?.message || err.message}`);
@@ -247,6 +269,44 @@ function Ranking() {
 
       {view === 'ranking' ? (
         <>
+          {/* Scheduled Preview & History Box */}
+          {reports && reports.length > 0 && (
+            <div style={{ marginBottom: '40px', background: 'rgba(255, 255, 255, 0.02)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <h3 className="ranking-section-title" style={{ marginTop: 0 }}>📅 Scheduled Preview & History</h3>
+              <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '10px' }}>
+                {reports.map(report => (
+                  <div key={report.monthKey} style={{ minWidth: '300px', background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <strong>{report.monthKey}</strong>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <span className={`score-pill ${report.status === 'scheduled' ? 'mid' : report.status === 'sent' ? 'good' : 'low'}`} style={{ fontSize: '12px', padding: '2px 8px' }}>
+                          {report.status.toUpperCase()}
+                        </span>
+                        <button onClick={() => handleDeleteReport(report.monthKey)} style={{ background: 'transparent', border: 'none', color: '#ff7b72', cursor: 'pointer', padding: '0' }} title="Delete Report">
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                    {report.status === 'scheduled' && report.scheduledFor && (
+                      <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '10px' }}>
+                        Sending on: {new Date(report.scheduledFor).toLocaleString()}
+                      </div>
+                    )}
+                    {report.imageBase64 ? (
+                      <img 
+                        src={`data:image/png;base64,${report.imageBase64}`} 
+                        alt="Preview" 
+                        style={{ width: '100%', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} 
+                      />
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#8b949e' }}>No image preview available</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Ranking Table */}
           <div className={`ranking-table-wrap${loading ? ' is-loading' : ''}`}>
             <table className="ranking-table">
@@ -376,12 +436,10 @@ function Ranking() {
               <div className="schedule-item">
                 <span className="schedule-item-label">Month-End Report</span>
                 <span className="schedule-item-value">
-                  {schedule?.lastWorkingDay || '—'}
+                  1st of Next Month
                 </span>
                 <span className="schedule-item-sub">
-                  {schedule?.isLastWorkingDay
-                    ? '🔴 Today is the last working day!'
-                    : 'Auto-generates on last working day'}
+                  Generates 10:00 AM, Sends 06:00 PM
                 </span>
               </div>
               <div className="schedule-item">
@@ -427,7 +485,7 @@ function Ranking() {
                 onClick={handleBackfill}
                 disabled={processing}
               >
-                🔄 Backfill from Sept 1
+                🔄 Backfill from {monthLabel || 'Start of Month'}
               </button>
               <button
                 className="ranking-btn primary"

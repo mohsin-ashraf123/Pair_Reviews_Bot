@@ -241,6 +241,21 @@ function LeadReports() {
             </div>
 
             <div className="lead-toolbar-actions" ref={historyRef}>
+              <button
+                type="button"
+                className="btn btn-sm outline"
+                onClick={async () => {
+                  try {
+                    await axios.get(`${API}/ranking/test_lead`);
+                    alert('Test lead report started for Mohsin!');
+                  } catch (err) {
+                    alert('Error starting test: ' + (err.response?.data?.message || err.message));
+                  }
+                }}
+                style={{ marginRight: '8px' }}
+              >
+                Test Lead
+              </button>
               <div className="lead-history-wrap">
                 <button
                   type="button"

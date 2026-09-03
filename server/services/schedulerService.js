@@ -2,7 +2,6 @@ import cron from 'node-cron';
 import { config } from '../config/appConfig.js';
 import {
   sendDailyPairs,
-  sendReviewReminder,
   sendMissedReviewNotice,
   sendMissingReviewFollowUps,
   sendDiscussionFollowUps,
@@ -14,7 +13,6 @@ import {
 import { postPairReviewThreadDigest } from './pairThreadService.js';
 import {
   processDateReviews,
-  isLastWorkingDayOfMonth,
   generateMonthlyReport,
   sendMonthlyReport,
 } from './rankingService.js';
@@ -22,7 +20,6 @@ import { getNextDailySendTarget, getAllScheduleCountdowns, getKarachiDateKey } f
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
 
 let pairsTask = null;
-let reminderTask = null;
 let missedReviewTask = null;
 let promptTask = null;
 let discussionTask = null;
@@ -34,7 +31,6 @@ let countdownInterval = null;
 
 const cronInFlight = {
   pairs: false,
-  reminder: false,
   missed: false,
   prompts: false,
   discussion: false,
@@ -42,6 +38,8 @@ const cronInFlight = {
   bossSend: false,
   pairThread: false,
   rankingProcess: false,
+  monthlyGenerate: false,
+  monthlySend: false,
 };
 
 const runCronJob = async (key, fn) => {
@@ -110,34 +108,7 @@ export const startPairScheduler = () => {
     console.log(`Pair scheduler active: "${config.cronSchedule}" (${config.timezone})`);
   }
 
-  if (config.enableReviewReminder) {
-    if (cron.validate(config.reminderCronSchedule) && !reminderTask) {
-      reminderTask = cron.schedule(
-        config.reminderCronSchedule,
-        () =>
-          runCronJob('reminder', async () => {
-            try {
-              const result = await sendReviewReminder('cron');
-              if (result.skipped) {
-                console.log(`[cron] Reminder skipped: ${result.reason}`);
-              } else {
-                console.log(
-                  `[cron] Review reminder sent (${result.pendingPairs.length} pending pairs)`
-                );
-              }
-            } catch (error) {
-              console.error('[cron] Failed to send review reminder:', error.message);
-            }
-          }),
-        { timezone: config.timezone }
-      );
-      console.log(
-        `Reminder scheduler active: "${config.reminderCronSchedule}" (${config.timezone})`
-      );
-    }
-  } else {
-    console.log('[cron] Review reminder disabled (ENABLE_REVIEW_REMINDER≠true)');
-  }
+
 
   if (config.enablePairThread) {
     if (cron.validate(config.pairThreadCronSchedule) && !pairThreadTask) {
@@ -311,18 +282,6 @@ export const startPairScheduler = () => {
                 `[cron] Ranking: processed ${result.processed} member insights for ${dateKey}`
               );
             }
-
-            // Check if today is the last working day of the month
-            if (isLastWorkingDayOfMonth()) {
-              console.log('[cron] Last working day — generating monthly ranking report');
-              try {
-                await generateMonthlyReport();
-                await sendMonthlyReport();
-                console.log('[cron] Monthly ranking report generated and sent');
-              } catch (reportErr) {
-                console.error('[cron] Monthly ranking report failed:', reportErr.message);
-              }
-            }
           } catch (error) {
             console.error('[cron] Ranking process failed:', error.message);
           }
@@ -333,6 +292,35 @@ export const startPairScheduler = () => {
       `Ranking process scheduler active: "${config.rankingProcessCronSchedule}" (${config.timezone})`
     );
   }
+
+  // --- Monthly Ranking Report Crons (1st of the month) ---
+  // Generate at 10:00 AM on the 1st
+  cron.schedule(
+    '0 10 1 * *',
+    () => runCronJob('monthlyGenerate', async () => {
+      console.log('[cron] 1st of month 10:00 AM — generating scheduled monthly ranking report');
+      try {
+        await generateMonthlyReport();
+      } catch (err) {
+        console.error('[cron] Monthly ranking generate failed:', err.message);
+      }
+    }),
+    { timezone: config.timezone }
+  );
+
+  // Send at 06:00 PM on the 1st
+  cron.schedule(
+    '0 18 1 * *',
+    () => runCronJob('monthlySend', async () => {
+      console.log('[cron] 1st of month 06:00 PM — sending scheduled monthly ranking report');
+      try {
+        await sendMonthlyReport();
+      } catch (err) {
+        console.error('[cron] Monthly ranking send failed:', err.message);
+      }
+    }),
+    { timezone: config.timezone }
+  );
 
   return pairsTask;
 };

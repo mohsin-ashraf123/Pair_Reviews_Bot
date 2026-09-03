@@ -14,7 +14,13 @@ import {
   addCalendarDays,
 } from './pairService.js';
 import { chatCompletion, getAiSettingsPublic } from './aiService.js';
-import { sendMatrixMessageToRoom, joinMatrixRoom } from './matrixService.js';
+import {
+  getMatrixClient,
+  joinMatrixRoom,
+  sendMatrixMessageToRoom,
+  sendMatrixImage,
+} from './matrixService.js';
+import puppeteer from 'puppeteer';
 import { logOutgoingMessage } from './roomMessageService.js';
 
 /* ------------------------------------------------------------------ */
@@ -665,12 +671,34 @@ export const generateMonthlyReport = async (monthKeyInput) => {
         modelName: settings.modelName || settings.modelId,
         rankings: aiRankings,
         reportText: reportText || 'Report generation completed but text was empty.',
-        status: 'ready',
-        error: null,
       },
     },
     { upsert: true, new: true }
   );
+
+  let imageBase64 = '';
+  try {
+    const buffer = await generateLeaderboardImageBuffer(report);
+    if (buffer) {
+      imageBase64 = buffer.toString('base64');
+      report.imageBase64 = imageBase64;
+    }
+  } catch (error) {
+    console.error('[ranking] Failed to generate preview image:', error);
+  }
+
+  // Calculate the 1st of the next month at 6:00 PM
+  const scheduledTime = new Date(yearStr, monthStr, 1, 18, 0, 0, 0); // monthStr is 1-indexed string, so passing it to Date as month index means the NEXT month
+
+  // If the scheduled time is in the past (e.g. manual generation after the 1st), keep it as 'draft'
+  if (scheduledTime < new Date()) {
+    report.status = 'draft';
+  } else {
+    report.status = 'scheduled';
+    report.scheduledFor = scheduledTime;
+  }
+
+  await report.save();
 
   return {
     monthKey,
@@ -714,10 +742,29 @@ export const sendMonthlyReport = async (monthKeyInput) => {
 
   await joinMatrixRoom(roomId).catch(() => {});
 
-  const result = await sendMatrixMessageToRoom(roomId, report.reportText, {
-    kind: 'monthly_ranking_report',
-    monthKey,
-  });
+  // Use generated image from report or fallback to generating it now
+  let imageBuffer = null;
+  try {
+    if (report.imageBase64) {
+      imageBuffer = Buffer.from(report.imageBase64, 'base64');
+    } else {
+      imageBuffer = await generateLeaderboardImageBuffer(report);
+    }
+  } catch (error) {
+    console.error('[ranking] Failed to get image for sending:', error);
+  }
+
+  let result;
+  if (imageBuffer) {
+    const filename = `leaderboard_${monthKey}.png`;
+    result = await sendMatrixImage(imageBuffer, filename, 'image/png');
+  } else {
+    // Fallback to text if image generation fails
+    result = await sendMatrixMessageToRoom(roomId, report.reportText, {
+      kind: 'monthly_ranking_report',
+      monthKey,
+    });
+  }
 
   report.status = 'sent';
   report.sentAt = new Date();
@@ -835,3 +882,177 @@ export const isLastWorkingDayOfMonth = () => {
   const workingDays = schedule.map((d) => d.dateKey);
   return workingDays[workingDays.length - 1] === todayKey;
 };
+
+/**
+ * Check if today is the 1st day of the month (which means we should generate/send the report for the PREVIOUS month).
+ */
+export const isFirstDayOfMonth = () => {
+  const todayKey = getKarachiDateKey();
+  const [, , day] = todayKey.split('-');
+  return day === '01';
+};
+
+/**
+ * Generate a beautiful HTML/CSS Leaderboard image using Puppeteer
+ */
+async function generateLeaderboardImageBuffer(report) {
+  const ranks = report.rankings || [];
+  
+  // Format the month nicely
+  const [yearStr, monthStr] = report.monthKey.split('-');
+  const date = new Date(yearStr, monthStr - 1);
+  const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  // Generate rows
+  const rowsHtml = ranks.map(r => {
+    let medal = '';
+    if (r.rank === 1) medal = '🥇';
+    else if (r.rank === 2) medal = '🥈';
+    else if (r.rank === 3) medal = '🥉';
+    else medal = `<span style="font-size: 0.8em; color: #8b949e;">#${r.rank}</span>`;
+
+    return `
+      <div class="row ${r.rank <= 3 ? 'top3' : ''}">
+        <div class="rank">${medal}</div>
+        <div class="details">
+          <div class="name-score">
+            <span class="name">${r.member}</span>
+            <span class="score">${r.score} <small>/10</small></span>
+          </div>
+          <div class="one-liner">${r.oneLiner}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+          margin: 0;
+          padding: 40px;
+          background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+          font-family: 'Inter', sans-serif;
+          color: #c9d1d9;
+          width: 800px;
+        }
+        .container {
+          background: rgba(22, 27, 34, 0.7);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 20px;
+          padding: 40px;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(10px);
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 40px;
+        }
+        h1 {
+          color: #fff;
+          font-weight: 800;
+          font-size: 32px;
+          margin: 0 0 10px 0;
+          background: -webkit-linear-gradient(45deg, #58a6ff, #3fb950);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+          color: #8b949e;
+          font-size: 18px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+        }
+        .row {
+          display: flex;
+          align-items: center;
+          background: rgba(255, 255, 255, 0.03);
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .row.top3 {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .rank {
+          font-size: 32px;
+          width: 60px;
+          text-align: center;
+        }
+        .details {
+          flex: 1;
+          margin-left: 20px;
+        }
+        .name-score {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+        .name {
+          font-size: 22px;
+          font-weight: 600;
+          color: #fff;
+        }
+        .score {
+          font-size: 22px;
+          font-weight: 800;
+          color: #3fb950;
+        }
+        .score small {
+          font-size: 14px;
+          color: #8b949e;
+        }
+        .one-liner {
+          color: #8b949e;
+          font-size: 15px;
+          line-height: 1.5;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Monthly Ranking Report</h1>
+          <div class="subtitle">${monthName}</div>
+        </div>
+        ${rowsHtml}
+      </div>
+    </body>
+    </html>
+  `;
+
+  let browser = null;
+  try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 880, height: 600, deviceScaleFactor: 2 });
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    const bodyHandle = await page.$('body');
+    const boundingBox = await bodyHandle.boundingBox();
+    const buffer = await page.screenshot({
+      clip: {
+        x: 0,
+        y: 0,
+        width: 880,
+        height: Math.ceil(boundingBox.height)
+      }
+    });
+    
+    await bodyHandle.dispose();
+    return Buffer.from(buffer);
+  } finally {
+    if (browser) await browser.close();
+  }
+}
