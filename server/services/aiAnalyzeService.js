@@ -97,35 +97,35 @@ const loadSubmittedReviews = async (reviewDateKey) => {
 
 const buildSystemPrompt = () =>
   [
-    'You write a clean, SHORT daily pair-review report for a manager (Sir).',
+    'You write a clean, SHORT daily pair-review report for a manager (Sir Ayyaz).',
     'Output ONLY the report text — no markdown fences, no preamble, no commentary.',
-    'Element supports **bold** via double asterisks — use **bold** for section titles, pair names, and the best-review mark.',
+    'CRITICAL: Do NOT use markdown asterisks (**) or markdown bold formatting anywhere. Output clean plain text without any asterisks (*).',
     '',
-    'Use this exact structure (plain text, easy to paste into Element):',
+    'Use this exact structure (plain text, NO asterisks):',
     '',
-    '📋 **Pair Review Report — {Review Date}**',
+    '📋 Pair Review Report — {Review Date}',
     '',
-    '**Lead:** {name}',
+    'Lead: {name}',
     '',
-    '**1) Attendance / Missing**',
+    '1) Attendance / Missing',
     '- EXACTLY one short line',
     '- ONLY list people who are: absent, half-day leave, or forgot',
     '- Do NOT mention excused / present / reviewed members',
     '- Do NOT repeat pair labels unless needed for forgot',
-    '- Example: "- **Adil** absent · **Saad** half-day"',
+    '- Example: "- Adil absent · Saad half-day"',
     '- if nobody absent/half-day/forgot: omit this whole section (skip heading too)',
     '',
-    '**2) Reviews**',
+    '2) Reviews',
     '- one short line per submitted pair that has REAL findings',
-    '- format: "• **{Pair}:** {very short summary}"',
+    '- format: "• {Pair}: {very short summary}"',
     '- If the review says no issues / no concerns / no recommendations / "No review": SKIP that pair entirely — do not list it',
     '- Otherwise: max 8–12 words — only the core suggestion/finding',
     '- Mark the best one inline on the same line among the listed reviews, e.g.:',
-    '  "• **Farhan + Mohsin:** short summary  ⭐ **Best** — {3–6 word why}"',
+    '  "• Farhan + Mohsin: short summary  ⭐ Best — {3–6 word why}"',
     '- Do NOT make a separate "Best Review" section',
     '- If every review was no-issues: write "- No notable reviews"',
     '',
-    '**3) Meeting Checks**',
+    '3) Meeting Checks',
     '- one short line per YES/NO, or "No meeting checks"',
     '',
     'Rules:',
@@ -134,6 +134,7 @@ const buildSystemPrompt = () =>
     '- Do not invent reviews',
     '- Never paste the full review body — only a tiny summary',
     '- No separate Best Review heading',
+    '- Never use asterisks (*) or (**) anywhere in the text.',
   ].join('\n');
 
 const buildUserPrompt = ({
@@ -313,10 +314,16 @@ export const analyzeMeetingDay = async (dateKeyInput) => {
     completion?.choices?.[0]?.message?.content ||
     completion?.choices?.[0]?.text ||
     '';
-  const brief = String(raw)
+  let brief = String(raw)
     .trim()
     .replace(/^```(?:text|markdown)?\s*/i, '')
     .replace(/```$/i, '')
+    .trim();
+
+  // Strip all asterisks (* or **) so the report is clean plain text
+  brief = brief
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+    .replace(/\*/g, '')
     .trim();
 
   if (!brief) {

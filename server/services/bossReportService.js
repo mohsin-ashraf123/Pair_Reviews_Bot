@@ -21,6 +21,13 @@ import {
 export const getBossRoomId = () =>
   (config.boss?.roomId || process.env.BOSS_MATRIX_ROOM_ID || '').trim();
 
+/** Remove markdown asterisks from report text for clean plain-text delivery. */
+export const cleanAsterisks = (text) =>
+  String(text || '')
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+    .replace(/\*/g, '')
+    .trim();
+
 /** True once Matrix delivery succeeded (eventId is the durable lock). */
 const wasDelivered = (doc) => Boolean(doc?.eventId);
 
@@ -133,7 +140,7 @@ export const prepareBossDailyReport = async (triggeredBy = 'cron') => {
       };
     }
 
-    still.brief = analysis.brief;
+    still.brief = cleanAsterisks(analysis.brief);
     still.modelId = analysis.modelId;
     still.modelName = analysis.modelName;
     still.status = 'ready';
@@ -259,7 +266,9 @@ export const sendBossDailyReport = async (triggeredBy = 'cron') => {
 
     await joinMatrixRoom(roomId).catch(() => {});
 
-    const result = await sendMatrixMessageToRoom(roomId, doc.brief, {
+    const cleanedBrief = cleanAsterisks(doc.brief);
+
+    const result = await sendMatrixMessageToRoom(roomId, cleanedBrief, {
       kind: 'boss_daily_report',
       dateKey: reviewDateKey,
       triggeredBy,
@@ -280,7 +289,7 @@ export const sendBossDailyReport = async (triggeredBy = 'cron') => {
           sendError: null,
           prepareError: null,
           sendDateKey,
-          brief: doc.brief,
+          brief: cleanedBrief,
         },
       },
       { new: true }
