@@ -915,14 +915,41 @@ router.get('/ranking/test_lead', async (req, res) => {
     let review = await DailyReview.findOne({ dateKey });
     if (!review) review = new DailyReview({ dateKey });
     
+    // Real pair groupings for realism
+    const realPairs = [
+      ['Habiba', 'Adil', 'Aqeel'],
+      ['Farhan', 'Hamza'],
+      ['Sheraz', 'Noman'],
+      ['Mohsin', 'Saad']
+    ];
+    
+    // Randomize the scenario
+    const rand = Math.random();
+    let reviewedMembers = [];
+    let scenarioName = '';
+    
+    if (rand < 0.33) {
+      // Scenario 1: Partial QA submission
+      reviewedMembers = ['Habiba', 'Adil', 'Farhan', 'Hamza'];
+      scenarioName = 'Partial QA (Aqeel missing) + Farhan/Hamza fully done';
+    } else if (rand < 0.66) {
+      // Scenario 2: QA pair completely missed
+      reviewedMembers = ['Farhan', 'Mohsin', 'Saad'];
+      scenarioName = 'QA missed completely + Farhan submitted (Hamza missing)';
+    } else {
+      // Scenario 3: Lots of missing pairs
+      reviewedMembers = ['Mohsin', 'Saad'];
+      scenarioName = 'Everyone missed except Mohsin+Saad';
+    }
+    
     review.lead = 'Mohsin';
-    review.pairs = [['Mohsin', 'Adil', 'Aqeel']];
+    review.pairs = realPairs;
     review.pairsSentAt = new Date();
-    review.reviewedMembers = ['Mohsin', 'Adil'];
+    review.reviewedMembers = reviewedMembers;
     await review.save();
 
     const result = await startLeadMorningReport(dateKey, { leadOverride: 'Mohsin', force: true });
-    res.json(result);
+    res.json({ scenario: scenarioName, result });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
