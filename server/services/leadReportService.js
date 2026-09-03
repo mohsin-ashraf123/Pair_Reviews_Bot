@@ -108,7 +108,6 @@ export const formatSinglePairVerifyQuestion = async (
 
   const msg = await RoomMessage.findOne(reviewQuery).sort({ sentAt: -1 });
 
-  const DailyReview = (await import('../models/DailyReview.js')).default;
   const review = await DailyReview.findOne({ dateKey }).lean();
   const presentMembers = pair.filter((m) => (review?.reviewedMembers || []).includes(m));
   const label = presentMembers.length > 0 ? formatPairLabel(presentMembers) : formatPairLabel(pair);
@@ -128,11 +127,14 @@ export const formatSinglePairVerifyQuestion = async (
       lines.push(`— ${msg.senderName}`);
     }
     lines.push('');
-  } else {
+  } else if (String(dateKey).startsWith('TEST-')) {
     lines.push('Review message:');
     lines.push('Tested API, found no bugs. Code is working perfectly as expected.');
     lines.push('');
     lines.push(`— ${label}`);
+    lines.push('');
+  } else {
+    lines.push('(Review was marked submitted, but the message text was not found.)');
     lines.push('');
   }
 
@@ -275,6 +277,15 @@ export const formatLeadReportComplete = (session) => {
     .join('\n');
 };
 
+export const parseOptions = (body) => {
+  const trimmed = (body || '').trim().replace(/^option[s]?\s*/i, '');
+  return [
+    ...new Set(
+      (trimmed.match(/\b[a-jA-J]\b/g) || []).map((letter) => letter.toUpperCase())
+    ),
+  ];
+};
+
 /**
  * Parse one or more option letters.
  * One reason per member — Adil absent + Adil half-day is rejected.
@@ -284,12 +295,7 @@ export const parseLeadPairReply = (body, options = []) => {
   const trimmed = (body || '').trim();
   if (!trimmed) return { error: 'empty' };
 
-  const cleaned = trimmed.replace(/^option[s]?\s*/i, '');
-  const letters = [
-    ...new Set(
-      (cleaned.match(/\b[a-jA-J]\b/g) || []).map((letter) => letter.toUpperCase())
-    ),
-  ];
+  const letters = parseOptions(body);
   if (!letters.length) return { error: 'no_letter' };
 
   const matched = letters
@@ -664,7 +670,6 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
     };
 
     // Check if there are missing members in this "submitted" review
-    const DailyReview = (await import('../models/DailyReview.js')).default;
     const review = await DailyReview.findOne({ dateKey: session.dateKey }).lean();
     const missingMembers = pair.filter((m) => !(review?.reviewedMembers || []).includes(m));
 
@@ -686,42 +691,30 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
   }
 
   if (session.stage === 'awaiting_missing_member_reason') {
-    const letters = parseOptions(body);
-    if (!letters.length) {
+    const parsed = parseLeadPairReply(body, session.currentPairOptions || []);
+    if (parsed.error) {
+      const optionLines = (session.currentPairOptions || [])
+        .map((opt) => `${opt.letter} — ${opt.label}`)
+        .join('\n');
+      const hint =
+        parsed.message ||
+        'Please reply with letter(s) from the options above (one reason per person).';
       return {
         status: 'invalid',
-        ack: 'Please reply with the letter(s) of your choice.',
+        ack: `${hint}\n\n${optionLines}`,
       };
     }
 
-    const matched = letters
-      .map((letter) => session.currentPairOptions.find((o) => o.letter === letter))
-      .filter(Boolean);
-
-    if (matched.length !== letters.length) {
-      return {
-        status: 'invalid',
-        ack: 'One or more letters are invalid. Please reply only with the letters from the options above.',
-      };
-    }
-
-    const isForgot = matched.some((opt) => opt.type === 'forgot');
-    
-    // Save their absence logic to the verify decision
+    const option = parsed.option;
     if (session.pendingVerify) {
-      if (isForgot) {
-        // Technically they forgot. But we just save it.
+      if (option.type === 'forgot') {
         session.pendingVerify.forgotMissing = true;
       }
-      session.pendingVerify.absentMembers = [
-        ...new Set(matched.flatMap((opt) => opt.absentMembers || [])),
-      ];
-      session.pendingVerify.halfDayMembers = [
-        ...new Set(matched.flatMap((opt) => opt.halfDayMembers || [])),
-      ];
+      session.pendingVerify.absentMembers = option.absentMembers || [];
+      session.pendingVerify.halfDayMembers = option.halfDayMembers || [];
       session.markModified('pendingVerify');
     }
-    
+
     await session.save();
     return askMominCheckForCurrentPair(session);
   }
@@ -743,6 +736,9 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
         pair,
         verified: pending ? Boolean(pending.verified) : true,
         mominCrossChecked: answer === 'yes',
+        absentMembers: pending?.absentMembers || [],
+        halfDayMembers: pending?.halfDayMembers || [],
+        forgotMissing: Boolean(pending?.forgotMissing),
         decidedAt: new Date(),
       });
     }
