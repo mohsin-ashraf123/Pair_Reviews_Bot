@@ -72,6 +72,11 @@ const buildParseSystemPrompt = () =>
     '  ]',
     '}',
     '',
+    'CRITICAL MULTI-ITEM AND ATTRIBUTION RULES:',
+    '- A member can provide multiple numbered points (e.g. "1-...", "2-:...", "1.", "2.") or multiple bullet points.',
+    '- Extract EACH point as a separate object in the "items" array with that member and type.',
+    '- IMPORTANT: Until the next member name or next section header appears, ALL subsequent lines, numbered points, or continuation text belong to the current active member. Never drop subsequent numbered items (like "2-:" or "2.") — attribute them to the member listed above them.',
+    '',
     'Rules:',
     '- Output ONLY valid JSON, no markdown fences, no commentary.',
     '- Normalize each text: clean up, remove redundant whitespace, keep it concise but preserve meaning.',
@@ -157,8 +162,12 @@ export const parseReviewInsights = async (reviewBody, pair, pairType) => {
   }
 };
 
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Simple regex fallback when AI is unavailable.
+ * Robust regex parser when AI is unavailable.
+ * Tracks current active member and attributes all subsequent lines / numbered points
+ * to that member until the next member name or section header appears.
  */
 const fallbackParse = (body, pair) => {
   if (NO_ISSUES_RE.test(body)) {
@@ -166,31 +175,119 @@ const fallbackParse = (body, pair) => {
   }
 
   const items = [];
-  const typeRe = /\b(SUGGESTION|CONCERN|ISSUE)\b/gi;
   const members = Array.isArray(pair) ? pair : [];
-  let currentType = null;
+  if (!members.length) return { emptyReview: true, items: [] };
 
-  for (const line of body.split('\n')) {
+  const memberNamesPattern = members.map(escapeRegExp).join('|');
+  const memberStartRe = new RegExp(`^(${memberNamesPattern})\\s*[:.\\-]\\s*(.*)$`, 'i');
+  const typeHeaderRe = /^\s*(SUGGESTIONS?|CONCERNS?|ISSUES?)\s*[:.\\-]?\s*$/i;
+  const inlinePrefixRe = /^[([]?\s*(SUGGESTIONS?|CONCERNS?|ISSUES?)\s*[)\]]?\s*[:.\\-]\s*(.*)$/i;
+  const listItemRe = /^\s*(?:(?:\d+\s*[-:.)]\s*)+|[-*•]\s+)(.*)$/;
+
+  let currentType = 'suggestion';
+  let currentMember = null;
+  let currentItem = null;
+
+  const pushCurrentItem = () => {
+    if (currentItem && currentItem.text.trim()) {
+      items.push({
+        member: currentItem.member,
+        type: currentItem.type,
+        text: currentItem.text.trim(),
+      });
+      currentItem = null;
+    }
+  };
+
+  const normalizeType = (raw) => {
+    const lower = String(raw || '').toLowerCase();
+    if (lower.startsWith('concern')) return 'concern';
+    if (lower.startsWith('issue')) return 'issue';
+    return 'suggestion';
+  };
+
+  const lines = (body || '').split('\n');
+  for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const typeMatch = trimmed.match(typeRe);
-    if (typeMatch) {
-      currentType = typeMatch[typeMatch.length - 1].toLowerCase();
+    // Skip pair header line (e.g. 'Habiba + Adil' or 'Developer: ...')
+    if (
+      members.length >= 2 &&
+      members.every((m) => new RegExp(`\\b${escapeRegExp(m)}\\b`, 'i').test(trimmed))
+    ) {
+      continue;
+    }
+    if (/^(developer|qa|pair)\s*[:.\\-]/i.test(trimmed)) {
+      continue;
     }
 
-    for (const member of members) {
-      const memberRe = new RegExp(`^${member}\\s*[:.]\\s*(.+)`, 'i');
-      const m = trimmed.match(memberRe);
-      if (m && m[1]?.trim()) {
-        items.push({
-          member,
-          type: currentType || 'suggestion',
-          text: m[1].trim(),
-        });
+    // Check pure type header (e.g. 'Concerns:', 'Suggestion:')
+    const typeHeaderMatch = trimmed.match(typeHeaderRe);
+    if (typeHeaderMatch) {
+      pushCurrentItem();
+      currentType = normalizeType(typeHeaderMatch[1]);
+      currentMember = null;
+      continue;
+    }
+
+    // Check if line starts with a member name (e.g. 'Habiba: ...')
+    const memberMatch = trimmed.match(memberStartRe);
+    if (memberMatch) {
+      pushCurrentItem();
+      const matchedName =
+        members.find((m) => m.toLowerCase() === memberMatch[1].toLowerCase()) ||
+        memberMatch[1];
+      currentMember = matchedName;
+      let rest = memberMatch[2].trim();
+
+      // Check if rest starts with an inline type keyword like '(Concern): ...' or 'Concern: ...'
+      const inlineMatch = rest.match(inlinePrefixRe);
+      let itemType = currentType;
+      if (inlineMatch) {
+        itemType = normalizeType(inlineMatch[1]);
+        rest = inlineMatch[2].trim();
+      }
+
+      if (rest) {
+        currentItem = {
+          member: currentMember,
+          type: itemType,
+          text: rest,
+        };
+      }
+      continue;
+    }
+
+    // Line does NOT start with a member name
+    // If we have an active member, all subsequent lines/points belong to that member
+    // until the next member or section header arrives.
+    if (currentMember) {
+      // Check if it's a new numbered or bulleted item (e.g. '2-:', '2.', '- ')
+      const listMatch = trimmed.match(listItemRe);
+      if (listMatch) {
+        pushCurrentItem();
+        currentItem = {
+          member: currentMember,
+          type: currentType,
+          text: trimmed,
+        };
+      } else {
+        // Continuation line for the active member's current point
+        if (currentItem) {
+          currentItem.text += ' ' + trimmed;
+        } else {
+          currentItem = {
+            member: currentMember,
+            type: currentType,
+            text: trimmed,
+          };
+        }
       }
     }
   }
+
+  pushCurrentItem();
 
   return { emptyReview: items.length === 0 && !NO_ISSUES_RE.test(body), items };
 };
