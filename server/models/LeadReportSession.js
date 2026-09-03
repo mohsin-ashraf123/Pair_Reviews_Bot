@@ -20,6 +20,9 @@ const verifyDecisionSchema = new mongoose.Schema(
     verified: Boolean,
     /** Did Momin Sir do cross-pair testing / review logging for this pair? */
     mominCrossChecked: { type: Boolean, default: null },
+    absentMembers: { type: [String], default: [] },
+    halfDayMembers: { type: [String], default: [] },
+    forgotMissing: { type: Boolean, default: false },
     decidedAt: Date,
   },
   { _id: false }
@@ -63,6 +66,7 @@ const leadReportSessionSchema = new mongoose.Schema(
         'idle',
         'awaiting_ready',
         'awaiting_verify',
+        'awaiting_missing_member_reason',
         'awaiting_momin_check',
         'awaiting_pair_choice',
         'awaiting_forgot_reason',
@@ -78,6 +82,9 @@ const leadReportSessionSchema = new mongoose.Schema(
     pendingVerify: {
       pair: [String],
       verified: Boolean,
+      absentMembers: [String],
+      halfDayMembers: [String],
+      forgotMissing: Boolean,
     },
 
     currentPairIndex: { type: Number, default: 0 },
