@@ -910,7 +910,8 @@ router.get('/ranking/test_lead', async (req, res) => {
     const { startLeadMorningReport } = await import('../services/leadReportService.js');
     const DailyReview = (await import('../models/DailyReview.js')).default;
     const { getKarachiDateKey } = await import('../services/pairService.js');
-    const dateKey = getKarachiDateKey(); 
+    // Use a fake date key so we NEVER overwrite the real live data for today!
+    const dateKey = 'TEST-' + getKarachiDateKey(); 
     
     let review = await DailyReview.findOne({ dateKey });
     if (!review) review = new DailyReview({ dateKey });
