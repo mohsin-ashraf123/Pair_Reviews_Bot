@@ -1,4 +1,9 @@
+import dns from 'node:dns';
 import express from 'express';
+
+if (!process.env.RAILWAY_ENVIRONMENT && !process.env.RAILWAY_PROJECT_ID) {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+}
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
@@ -134,6 +139,18 @@ const bootBackgroundServices = async () => {
           console.error('Boss room join failed:', error.message)
         );
         await warmMatrixClient();
+        const { isPastCronTimeToday } = await import('./services/pairService.js');
+        if (isPastCronTimeToday(config.missingReviewPromptCronSchedule, 10, 50)) {
+          const { sendMissingReviewFollowUps } = await import('./services/pairBotService.js');
+          const leadReport = await sendMissingReviewFollowUps('cron');
+          if (leadReport.skipped) {
+            console.log(`[lead-report] Catch-up skipped: ${leadReport.reason}`);
+          } else {
+            console.log(
+              `[lead-report] Catch-up started for ${leadReport.forDate} (lead ${leadReport.lead})`
+            );
+          }
+        }
       } catch (error) {
         console.error('Matrix warm failed:', error.message);
       }

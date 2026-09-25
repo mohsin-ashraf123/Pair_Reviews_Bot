@@ -828,6 +828,7 @@ export const registerMatrixRoomListener = async (client) => {
     return;
   }
   matrixListenerRegistered = true;
+  const listenerStartedAt = Date.now();
 
   const botUserId = await client.getUserId();
 
@@ -871,45 +872,63 @@ export const registerMatrixRoomListener = async (client) => {
         return;
       }
 
-      console.warn(
-        `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
-      );
-
       if (!isMemberRoom(roomId)) return;
+
+      // The bot's own encrypted sends often fail inbound decrypt. That is not the lead's reply.
+      if (event?.sender && botUserId && event.sender === botUserId) return;
 
       const member = getMemberForRoomId(roomId);
       if (!member) return;
 
-      const { getActiveLeadSessionForMember } = await import('./leadReportService.js');
-      const activeLead = await getActiveLeadSessionForMember(member);
-      const DiscussionPrompt = (await import('../models/DiscussionPrompt.js')).default;
-      const awaitingDiscussion = await DiscussionPrompt.exists({
-        member,
-        status: 'pending',
-      });
-
-      if (!activeLead && !awaitingDiscussion) return;
+      // Startup sync replays old Megolm events this device cannot open.
+      const sentAt = Number(event?.origin_server_ts || 0);
+      if (!sentAt || sentAt < listenerStartedAt - 20_000) return;
+      if (eventId && seenEvents.has(eventId)) return;
 
       const key = `${roomId}:decrypt-prompt`;
       if (decryptPromptSent.has(key)) return;
       decryptPromptSent.add(key);
       setTimeout(() => decryptPromptSent.delete(key), 10 * 60 * 1000);
 
-      const hint =
-        'I could not read your last message (encryption). Please send your reply again as plain text (e.g. YES).';
-      const sent = await sendMatrixMessageToRoom(roomId, hint, {
-        kind: 'decrypt_retry_prompt',
-        member,
-        dateKey: activeLead?.dateKey || null,
-      });
-      await logMemberRoomMessage({
-        member,
-        roomId,
-        body: hint,
-        eventId: sent.event_id,
-        category: 'bot_dm_ack',
-        dateKey: activeLead?.dateKey || null,
-      });
+      // Keys often arrive a moment later and the same reply is handled normally.
+      setTimeout(async () => {
+        try {
+          if (eventId && seenEvents.has(eventId)) return;
+
+          console.warn(
+            `[matrix] Failed to decrypt in ${roomId}: ${err?.message || err}`
+          );
+
+          const { getActiveLeadSessionForMember } = await import('./leadReportService.js');
+          const activeLead = await getActiveLeadSessionForMember(member);
+          const DiscussionPrompt = (await import('../models/DiscussionPrompt.js')).default;
+          const awaitingDiscussion = await DiscussionPrompt.exists({
+            member,
+            status: 'pending',
+          });
+
+          if (!activeLead && !awaitingDiscussion) return;
+          if (eventId && seenEvents.has(eventId)) return;
+
+          const hint =
+            'I could not read your last message (encryption). Please send your reply again as plain text (e.g. YES).';
+          const sent = await sendMatrixMessageToRoom(roomId, hint, {
+            kind: 'decrypt_retry_prompt',
+            member,
+            dateKey: activeLead?.dateKey || null,
+          });
+          await logMemberRoomMessage({
+            member,
+            roomId,
+            body: hint,
+            eventId: sent.event_id,
+            category: 'bot_dm_ack',
+            dateKey: activeLead?.dateKey || null,
+          });
+        } catch (error) {
+          console.error('room.failed_decryption hint error:', error.message);
+        }
+      }, 8000);
     } catch (error) {
       console.error('room.failed_decryption handler error:', error.message);
     }

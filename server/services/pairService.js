@@ -113,13 +113,16 @@ export const getFollowUpTargetDateKey = (date = new Date()) => {
 };
 
 export const formatDisplayDate = (dateKey) => {
+  if (!dateKey) return '';
   const [y, m, d] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
+  const dateObj = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(dateObj.getTime())) return dateKey;
   return new Intl.DateTimeFormat('en-US', {
     timeZone: config.timezone,
     month: 'long',
     day: 'numeric',
     year: 'numeric',
-  }).format(new Date(Date.UTC(y, m - 1, d)));
+  }).format(dateObj);
 };
 
 /** Get next working day from dateKey (skips weekends + holidays). */
