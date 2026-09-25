@@ -70,7 +70,7 @@ export const isPastDailySendTime = (date = new Date()) => {
 };
 
 export const addCalendarDays = (dateKey, days) => {
-  const [year, month, day] = dateKey.split('-').map(Number);
+  const [year, month, day] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
   const next = new Date(Date.UTC(year, month - 1, day + days));
   const y = next.getUTCFullYear();
   const m = String(next.getUTCMonth() + 1).padStart(2, '0');
@@ -113,7 +113,7 @@ export const getFollowUpTargetDateKey = (date = new Date()) => {
 };
 
 export const formatDisplayDate = (dateKey) => {
-  const [y, m, d] = dateKey.split('-').map(Number);
+  const [y, m, d] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
   return new Intl.DateTimeFormat('en-US', {
     timeZone: config.timezone,
     month: 'long',
@@ -133,7 +133,7 @@ export const nextWorkingDay = (dateKey) => {
 
 /** Returns day-of-week (0=Sun … 6=Sat) for a dateKey in YYYY-MM-DD format. */
 export const getDayOfWeek = (dateKey) => {
-  const [year, month, day] = dateKey.split('-').map(Number);
+  const [year, month, day] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 };
 
@@ -151,7 +151,7 @@ export const isNonWorkingDay = (dateKey) =>
  * Ensures pair rotation doesn't skip over weekends.
  */
 export const getDayIndexFromDateKey = (dateKey) => {
-  const [year, month, day] = dateKey.split('-').map(Number);
+  const [year, month, day] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
   const utc = Date.UTC(year, month - 1, day);
   const calendarDay = Math.floor(utc / (24 * 60 * 60 * 1000));
   const fullWeeks = Math.floor(calendarDay / 7);
@@ -463,7 +463,7 @@ export const getNextDailySendTarget = (date = new Date()) => {
 
 /** Convert a calendar date + wall-clock time in config.timezone to UTC epoch ms. */
 function karachiWallTimeToUtcMs(dateKey, hour, minute) {
-  const [y, m, d] = dateKey.split('-').map(Number);
+  const [y, m, d] = dateKey.replace(/^TEST-/, '').split('-').map(Number);
   const utcGuess = Date.UTC(y, m - 1, d, hour, minute, 0);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: config.timezone,
