@@ -1,0 +1,16 @@
+name: Bot checks
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix server
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      - run: npm test --prefix server
+      - run: npm ci --prefix client --include=dev
+      - run: npm run build --prefix client

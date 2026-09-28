@@ -13,6 +13,7 @@ import './config/appConfig.js';
 import { config } from './config/appConfig.js';
 import connectDB from './config/db.js';
 import pairRoutes from './routes/pairs.js';
+import { loginDashboard, requireDashboardAuth } from './services/dashboardAuth.js';
 import { startPairScheduler } from './services/schedulerService.js';
 import { warmMatrixClient } from './services/matrixService.js';
 import { initSocketServer } from './services/socketService.js';
@@ -60,7 +61,8 @@ app.get('/api/ready', (req, res) => {
   });
 });
 
-app.use('/api/pairs', pairRoutes);
+app.post('/api/auth/login', loginDashboard);
+app.use('/api/pairs', requireDashboardAuth, pairRoutes);
 
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));

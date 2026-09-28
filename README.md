@@ -6,6 +6,18 @@ Automated daily pair messages to your Element room, plus private follow-ups when
 
 ## Setup
 
+Dashboard access now requires `ADMIN_PASSWORD` (at least 16 characters) on the
+backend. `ADMIN_USERNAME` defaults to `Admin`; optionally set an independent
+`ADMIN_SESSION_SECRET`. There is no built-in dashboard password. Configure these
+variables before deploying the backend and deploy the updated frontend alongside
+it. Unconfigured dashboard APIs fail closed; bot cron processing is unaffected.
+Sign in again after this upgrade. API requests use a 12-hour signed bearer token;
+WebSocket connections use the same token. Rotating the signing secret (or the
+password when no separate secret is set) invalidates existing sessions.
+
+Run regression checks with `npm test --prefix server` and build the dashboard with
+`npm ci --prefix client --include=dev` then `npm run build --prefix client`.
+
 ### server/.env
 
 ```env

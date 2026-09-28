@@ -71,9 +71,8 @@ export const parseYesNo = (body) => {
   if (token.length >= 2 && token.length <= 4 && editDistance(token, 'yes') <= 1) {
     return 'yes';
   }
-  if (token.length >= 2 && token.length <= 3 && editDistance(token, 'no') <= 1) {
-    return 'no';
-  }
+  // Do not fuzzy-match NO: ordinary words like "now", "go" and "do"
+  // were incorrectly recording negative verification decisions.
 
   return null;
 };

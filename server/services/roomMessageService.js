@@ -1,8 +1,10 @@
 import RoomMessage from '../models/RoomMessage.js';
 import { DecryptionRetryCache, fetchRecoveryEvents, REVIEW_RECOVERY_WINDOW_MS } from './reviewRecovery.js';
+import { createKeyedQueue } from './keyedQueue.js';
+const queueMemberEvent = createKeyedQueue();
 import { config } from '../config/appConfig.js';
 import { getKarachiDateKey } from './pairService.js';
-import { resolveMemberName } from './memberService.js';
+import { resolveMemberName, getMatrixIdForMember } from './memberService.js';
 import {
   recordReviewFromMessage,
   formatWrongPairAlert,
@@ -130,15 +132,19 @@ const applyMessageEdit = async (payload) => {
   const original = await RoomMessage.findOne({ eventId: payload.replacesEventId });
   if (!original) {
     // Original not in our DB — store the edit quietly without review side-effects.
-    const { replacesEventId, ...rest } = payload;
-    return RoomMessage.findOneAndUpdate(
-      { eventId: rest.eventId },
-      { ...rest, category: 'team_review' },
+    const saved = await RoomMessage.findOneAndUpdate(
+      { eventId: payload.eventId },
+      { ...payload, category: 'team_review' },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    saved.pendingEdit = true;
+    return saved;
   }
 
+  if (original.deletedAt || original.senderId !== payload.senderId || original.roomId !== payload.roomId) return original;
+  if (original.editedAt && new Date(payload.sentAt) <= original.editedAt) return original;
   original.body = payload.body;
+  original.editedAt = payload.sentAt;
   await original.save();
 
   if (original.countsAsReview || original.category === 'team_review') {
@@ -151,6 +157,7 @@ const applyMessageEdit = async (payload) => {
           reviewIssue: 1,
           attemptedPair: 1,
           countsAsReview: 1,
+          reviewProcessedAt: 1,
           matchedPair: 1,
           pairKey: 1,
         },
@@ -160,6 +167,11 @@ const applyMessageEdit = async (payload) => {
     // Re-evaluate the edited body. Never send room alerts for edits.
     await recordReviewFromMessage(payload.body, original.dateKey, original.eventId);
     await recomputeReviewedMembers(original.dateKey);
+    const updated = await RoomMessage.findOne({ eventId: original.eventId });
+    if (updated?.countsAsReview) {
+      const { syncLeadSessionAfterLateReview } = await import('./leadReportService.js');
+      await syncLeadSessionAfterLateReview(original.dateKey, updated.matchedPair);
+    }
   }
 
   const refreshed = await RoomMessage.findOne({ eventId: original.eventId });
@@ -174,11 +186,13 @@ const applyMessageEdit = async (payload) => {
 
 export const persistAndBroadcastMessage = async (payload) => {
   try {
+    const existing = await RoomMessage.findOne({ eventId: payload.eventId });
+    if (existing?.deletedAt) return existing;
     if (payload.replacesEventId) {
       return await applyMessageEdit(payload);
     }
 
-    const saved = await RoomMessage.findOneAndUpdate(
+    const saved = existing || await RoomMessage.findOneAndUpdate(
       { eventId: payload.eventId },
       payload,
       { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -205,7 +219,7 @@ export const persistAndBroadcastMessage = async (payload) => {
           saved.senderId,
           saved.eventId
         );
-      } else if (result?.status === 'success') {
+      } else if (result?.status === 'success' || result?.status === 'duplicate_pair') {
         try {
           const { syncPairReviewThreadDraft } = await import(
             './pairThreadService.js'
@@ -244,6 +258,10 @@ export const persistAndBroadcastMessage = async (payload) => {
             );
           }
         }
+      }
+      if (result?.status !== 'inactive') {
+        await RoomMessage.updateOne({ eventId: saved.eventId }, { $set: { reviewProcessedAt: new Date() } });
+        saved.reviewProcessedAt = new Date();
       }
     }
 
@@ -298,7 +316,7 @@ export const logMemberRoomMessage = async ({
 };
 
 /** Route a reply inside a member's personal room to the prompt handler. */
-const handleMemberRoomEvent = async (roomId, event, botUserId) => {
+const handleMemberRoomEvent = (roomId, event, botUserId) => queueMemberEvent(roomId, async () => {
   const member = getMemberForRoomId(roomId);
   if (!member) return;
 
@@ -306,10 +324,14 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
   const body = (content.body || '').trim();
   const eventId = event.event_id;
   if (!body || !eventId || seenEvents.has(eventId)) return;
-  seenEvents.add(eventId);
+  if (getEditTargetEventId(content)) return;
 
   const senderId = event.sender || '';
   const isBot = botUserId && senderId === botUserId;
+  const expectedSender = getMatrixIdForMember(member);
+  if (!isBot && expectedSender && senderId !== expectedSender) return;
+  // Replayed sync events must not answer the next question a second time.
+  if (await RoomMessage.exists({ eventId })) return;
 
   if (isBot) {
     await logMemberRoomMessage({
@@ -322,7 +344,7 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
     return;
   }
 
-  await logMemberRoomMessage({
+  const logged = await logMemberRoomMessage({
     member,
     roomId,
     body,
@@ -332,6 +354,8 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
     senderId,
     senderName: member,
   });
+  if (!logged) return;
+  seenEvents.add(eventId);
   await touchMemberRoom(member, { lastReplyAt: new Date() });
 
   // Lead report conversation takes priority over legacy member prompts.
@@ -346,6 +370,8 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
     );
 
     if (activeLead) {
+      if (event.origin_server_ts && activeLead.reportSentAt
+        && event.origin_server_ts < new Date(activeLead.reportSentAt).getTime()) return;
       // Stamp the lead-report day on the inbound reply for dashboard history.
       if (activeLead.dateKey) {
         await RoomMessage.updateOne(
@@ -455,7 +481,7 @@ const handleMemberRoomEvent = async (roomId, event, botUserId) => {
   } catch (error) {
     console.error(`[member-room] Ack failed for ${member}: ${error.message}`);
   }
-};
+});
 
 export const handleIncomingMatrixMessage = async (roomId, event, botUserId) => {
   if (roomId !== config.matrix.roomId) {
@@ -473,7 +499,7 @@ export const handleIncomingMatrixMessage = async (roomId, event, botUserId) => {
   processingMainEvents.add(payload.eventId);
   try {
     const saved = await persistAndBroadcastMessage(payload);
-    if (saved) {
+    if (saved && !saved.pendingEdit && (saved.direction === 'out' || saved.reviewProcessedAt || payload.replacesEventId || saved.deletedAt)) {
       seenEvents.add(payload.eventId);
       undecryptableEventIds.delete(payload.eventId);
     }
@@ -505,6 +531,7 @@ export const getLiveRoomMessages = (limit = 50) => {
   const since = new Date(Date.now() - LIVE_WINDOW_MS);
   const personal = Object.values(config.memberRoomMap || {}).filter(Boolean);
   const query = {
+    deletedAt: { $exists: false },
     sentAt: { $gte: since },
     // Hide re-sends that did not count again (already marked from first submit).
     reviewIssue: { $nin: ['duplicate_pair'] },
@@ -524,6 +551,7 @@ export const getArchivedReviewMessages = (limit = 100) => {
   const before = new Date(Date.now() - LIVE_WINDOW_MS);
   const personal = Object.values(config.memberRoomMap || {}).filter(Boolean);
   const query = {
+    deletedAt: { $exists: false },
     direction: 'in',
     category: 'team_review',
     sentAt: { $lt: before },
@@ -554,6 +582,7 @@ export const getFullHistory = async () => {
       .sort({ sentAt: -1 })
       .limit(100),
     RoomMessage.find({
+      deletedAt: { $exists: false },
       $or: [
         { direction: 'in', category: 'team_review' },
         { category: 'bot_reminder' },
@@ -626,7 +655,8 @@ export const reconcilePendingMemberReplies = async (client) => {
       stage: {
         $in: [
           'awaiting_ready',
-          'awaiting_verify',
+        'awaiting_verify',
+        'awaiting_missing_member_reason',
           'awaiting_momin_check',
           'awaiting_pair_choice',
           'awaiting_forgot_reason',
@@ -772,9 +802,12 @@ export const reconcileMainRoomReviews = async (
       if (eventId && undecryptableEventIds.has(eventId)) continue;
       if (eventId && seenEvents.has(eventId)) continue;
       // Do not repeatedly decrypt already persisted history on every recovery pass.
-      if (eventId && await RoomMessage.exists({ eventId })) {
-        seenEvents.add(eventId);
-        continue;
+      if (eventId) {
+        const stored = await RoomMessage.findOne({ eventId });
+        if (stored?.deletedAt || stored?.reviewProcessedAt || stored?.direction === 'out') {
+          seenEvents.add(eventId);
+          continue;
+        }
       }
 
       let event = raw;
@@ -802,12 +835,6 @@ export const reconcileMainRoomReviews = async (
       const body = getEffectiveBody(event.content || {});
       if (!body || !event.event_id) continue;
       if (seenEvents.has(event.event_id)) continue;
-
-      const already = await RoomMessage.exists({ eventId: event.event_id });
-      if (already) {
-        seenEvents.add(event.event_id);
-        continue;
-      }
 
       console.log(
         `[room] Main reconcile ingesting ${event.sender} "${body.slice(0, 48)}"`

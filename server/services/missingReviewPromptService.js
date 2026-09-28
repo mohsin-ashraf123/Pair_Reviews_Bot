@@ -318,7 +318,8 @@ const applyAnswerToReview = async (prompt, option) => {
     prompt.response.type = option.type || prompt.response.type;
   }
 
-  return recomputeAttendanceFromPrompts(prompt.dateKey);
+  const { recomputeAttendanceFromLeadReport } = await import('./leadReportService.js');
+  return recomputeAttendanceFromLeadReport(prompt.dateKey);
 };
 
 const promptToPayload = (prompt) => ({

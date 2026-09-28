@@ -11,17 +11,17 @@ function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const success = login(username, password);
-
-    if (success) {
+    try {
+      await login(username, password);
       navigate('/dashboard', { replace: true });
-    } else {
-      setError('Invalid username or password');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Could not sign in. Please try again.');
+    } finally {
       setLoading(false);
     }
   };

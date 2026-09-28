@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { API, API_BASE, createSocket } from '../config/api.js';
+import { API, createSocket } from '../config/api.js';
 import './LeadReports.css';
+import { usePrivateImage } from '../hooks/usePrivateImage.js';
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -23,17 +24,12 @@ function stageTone(stage) {
   return 'active';
 }
 
-function avatarSrc(path) {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return `${API_BASE}${path}`;
-}
-
 function LeadAvatar({ name, avatarUrl, size = 'md' }) {
+  const src = usePrivateImage(avatarUrl);
   const [failed, setFailed] = useState(false);
   const initials = (name || '?').slice(0, 2).toUpperCase();
 
-  if (!avatarUrl || failed) {
+  if (!src || failed) {
     return (
       <span className={`lead-avatar fallback size-${size}`} aria-hidden>
         {initials}
@@ -44,7 +40,7 @@ function LeadAvatar({ name, avatarUrl, size = 'md' }) {
   return (
     <img
       className={`lead-avatar size-${size}`}
-      src={avatarSrc(avatarUrl)}
+      src={src}
       alt=""
       loading="lazy"
       onError={() => setFailed(true)}
@@ -99,8 +95,11 @@ function LeadReports() {
   const [error, setError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyRef = useRef(null);
+  const requestVersion = useRef(0);
+  const [resending, setResending] = useState(false);
 
   const load = useCallback(async (dateKey, { soft = false } = {}) => {
+    const version = ++requestVersion.current;
     if (soft) setSwitching(true);
     else setLoading(true);
     try {
@@ -108,14 +107,18 @@ function LeadReports() {
         ? `${API}/lead-reports/${encodeURIComponent(dateKey)}`
         : `${API}/lead-report`;
       const res = await axios.get(url);
+      if (version !== requestVersion.current) return;
       setData(res.data);
       setSelectedKey(res.data.dateKey);
       setError('');
     } catch (err) {
+      if (version !== requestVersion.current) return;
       setError(err.response?.data?.message || 'Failed to load lead reports');
     } finally {
-      setLoading(false);
-      setSwitching(false);
+      if (version === requestVersion.current) {
+        setLoading(false);
+        setSwitching(false);
+      }
     }
   }, []);
 
@@ -202,10 +205,10 @@ function LeadReports() {
     return chips;
   }, [data?.attendance]);
 
-  const verifyTotal = (session?.verifyDecisions || []).length;
+  const verifyTotal = (session?.submittedPairs || []).length;
   const verified = (session?.verifyDecisions || []).filter((d) => d.verified)
     .length;
-  const missingCount = (session?.pairDecisions || []).length;
+  const missingCount = (data?.pendingPairs || []).length;
 
   const selectDay = (dateKey) => {
     setHistoryOpen(false);
@@ -244,17 +247,19 @@ function LeadReports() {
               <button
                 type="button"
                 className="btn btn-sm outline"
+                disabled={resending || !session || ['completed', 'idle'].includes(session.stage)}
                 onClick={async () => {
+                  setResending(true);
                   try {
-                    await axios.get(`${API}/ranking/test_lead`);
-                    alert('Test lead report started for Mohsin!');
+                    await axios.post(`${API}/member-rooms/resend-lead-prompt`, { member: data.lead, dateKey: data.dateKey });
+                    await load(data.dateKey, { soft: true });
                   } catch (err) {
-                    alert('Error starting test: ' + (err.response?.data?.message || err.message));
-                  }
+                    setError(err.response?.data?.message || 'Could not resend the prompt');
+                  } finally { setResending(false); }
                 }}
                 style={{ marginRight: '8px' }}
               >
-                Test Lead
+                {resending ? 'Sending…' : 'Resend question'}
               </button>
               <div className="lead-history-wrap">
                 <button

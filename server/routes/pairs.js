@@ -21,6 +21,7 @@ import { getNextDailySendTarget, getAllScheduleCountdowns, cronTimeLabel } from 
 import { getTodayReviewState } from '../services/reviewService.js';
 import { getLiveRoomMessages, getArchivedReviewMessages } from '../services/roomMessageService.js';
 import RoomMessage from '../models/RoomMessage.js';
+import DailyReview from '../models/DailyReview.js';
 import { verifyMatrixConnection } from '../services/matrixService.js';
 import { getScheduledMessagesInfo } from '../services/scheduleInfoService.js';
 import {
@@ -460,6 +461,7 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
       formatMominCheckQuestion,
       formatPairChoiceQuestion,
       formatForgotReasonQuestion,
+      formatMissingMemberQuestion,
     } = await import('../services/leadReportService.js');
     const { sendMatrixMessageToRoom } = await import('../services/matrixService.js');
     const { logMemberRoomMessage } = await import('../services/roomMessageService.js');
@@ -467,10 +469,12 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
 
     const session = await LeadReportSession.findOne({
       lead: member,
+      ...(req.body?.dateKey ? { dateKey: req.body.dateKey } : {}),
       stage: {
         $in: [
           'awaiting_ready',
           'awaiting_verify',
+          'awaiting_missing_member_reason',
           'awaiting_momin_check',
           'awaiting_pair_choice',
           'awaiting_forgot_reason',
@@ -498,6 +502,12 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
         session.currentVerifyIndex || 0,
         (session.submittedPairs || []).length
       );
+    } else if (session.stage === 'awaiting_missing_member_reason') {
+      const pair = session.pendingVerify?.pair || session.submittedPairs[session.currentVerifyIndex];
+      if (!pair) return res.status(400).json({ message: 'No pair awaiting a missing-member reason' });
+      const review = await DailyReview.findOne({ dateKey: session.dateKey });
+      const missing = pair.filter(m => !(review?.reviewedMembers || []).includes(m));
+      message = formatMissingMemberQuestion(pair, missing, session.currentPairOptions || [], session.currentVerifyIndex, session.submittedPairs.length);
     } else if (session.stage === 'awaiting_momin_check') {
       const pair =
         session.pendingVerify?.pair ||
@@ -905,7 +915,7 @@ router.delete('/ranking/reports/:monthKey', async (req, res) => {
   }
 });
 
-router.get('/ranking/test_lead', async (req, res) => {
+router.post('/ranking/test_lead', async (req, res) => {
   try {
     const { startLeadMorningReport } = await import('../services/leadReportService.js');
     const DailyReview = (await import('../models/DailyReview.js')).default;

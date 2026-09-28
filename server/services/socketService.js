@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { createServer } from 'http';
+import { verifyToken } from './dashboardAuth.js';
 
 let io = null;
 
@@ -9,6 +10,14 @@ export const initSocketServer = (app) => {
     cors: { origin: '*', methods: ['GET', 'POST'] },
   });
 
+  io.use((socket, next) => {
+    const auth = verifyToken(socket.handshake.auth?.token);
+    if (!auth) return next(new Error('Please sign in.'));
+    const expiryTimer = setTimeout(() => socket.disconnect(true), auth.expires - Date.now());
+    expiryTimer.unref?.();
+    socket.on('disconnect', () => clearTimeout(expiryTimer));
+    next();
+  });
   io.on('connection', (socket) => {
     console.log('Dashboard connected:', socket.id);
     socket.on('disconnect', () => {

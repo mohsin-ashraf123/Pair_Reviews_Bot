@@ -44,6 +44,9 @@ const roomMessageSchema = new mongoose.Schema(
     alertTriggeredById: String,
     relatedEventId: String,
     deletedAt: Date,
+    reviewProcessedAt: Date,
+    replacesEventId: String,
+    editedAt: Date,
   },
   { timestamps: true }
 );

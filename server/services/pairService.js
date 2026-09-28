@@ -1,5 +1,6 @@
 import { config } from '../config/appConfig.js';
 import { isHoliday } from './holidayService.js';
+import { validateMonth } from './dateValidation.js';
 
 /** Daily send time comes from CRON_SCHEDULE so previews stay in sync with cron. */
 const parseCronTime = (expression, fallbackHour, fallbackMinute) => {
@@ -286,6 +287,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** All weekday pairs for a calendar month (Sat/Sun excluded). */
 export const getMonthSchedule = (year, month) => {
+  validateMonth(Number(year), Number(month));
   const daysInMonth = new Date(year, month, 0).getDate();
   const schedule = [];
 

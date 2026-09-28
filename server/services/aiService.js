@@ -97,6 +97,7 @@ export const fetchOpenRouterModels = async (apiKeyOverride) => {
   }
 
   const res = await fetch(`${OPENROUTER_BASE}/models`, {
+    signal: AbortSignal.timeout(30_000),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: 'application/json',
@@ -152,6 +153,7 @@ export const chatCompletion = async ({ messages, model, temperature = 0.3 }) => 
   }
 
   const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    signal: AbortSignal.timeout(120_000),
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,

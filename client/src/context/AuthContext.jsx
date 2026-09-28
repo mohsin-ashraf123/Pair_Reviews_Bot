@@ -1,29 +1,32 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useMemo, useState, useEffect } from 'react';
+import axios from 'axios';
+import { AUTH_KEY, getSession, apiUrl } from '../config/api.js';
 
 const AuthContext = createContext(null);
 
-const VALID_USERNAME = 'Admin';
-const VALID_PASSWORD = 'Admin@123';
-const AUTH_KEY = 'bot_auth';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    return localStorage.getItem(AUTH_KEY);
+    return getSession()?.username || null;
   });
 
-  const login = (username, password) => {
-    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
-      localStorage.setItem(AUTH_KEY, username);
-      setUser(username);
-      return true;
-    }
-    return false;
+  const login = async (username, password) => {
+    const { data } = await axios.post(apiUrl('/api/auth/login'), { username, password });
+    sessionStorage.setItem(AUTH_KEY, JSON.stringify(data));
+    setUser(data.username);
+    return true;
   };
 
   const logout = () => {
-    localStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(AUTH_KEY);
     setUser(null);
   };
+
+  useEffect(() => {
+    const expire = () => setUser(null);
+    window.addEventListener('auth-expired', expire);
+    return () => window.removeEventListener('auth-expired', expire);
+  }, []);
 
   const value = useMemo(
     () => ({

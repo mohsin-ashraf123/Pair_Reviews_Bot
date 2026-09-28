@@ -9,6 +9,7 @@ import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate, emitReviewUpdate } from './socketService.js';
 import { parseYesNo } from './yesNoParse.js';
+import { mergeSubmittedPairs, nextUnverifiedIndex } from './leadQueue.js';
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
@@ -393,7 +394,7 @@ export const recomputeAttendanceFromLeadReport = async (dateKey) => {
 
   for (const decision of session.verifyDecisions || []) {
     if (decision.forgotMissing) {
-      const missing = decision.pair?.filter((m) => !(decision.absentMembers || []).includes(m) && !(decision.halfDayMembers || []).includes(m)) || [];
+      const missing = decision.pair?.filter((m) => !(review.reviewedMembers || []).includes(m) && !(decision.absentMembers || []).includes(m) && !(decision.halfDayMembers || []).includes(m)) || [];
       for (const name of missing) late.add(name);
     }
     for (const name of decision.halfDayMembers || []) halfDay.add(name);
@@ -418,6 +419,12 @@ export const recomputeAttendanceFromLeadReport = async (dateKey) => {
     }
   }
 
+  for (const name of review.reviewedMembers || []) {
+    absent.delete(name);
+    halfDay.delete(name);
+    late.delete(name);
+    excused.delete(name);
+  }
   review.absentMembers = [...absent];
   review.halfDayMembers = [...halfDay];
   review.lateReviewedMembers = [...late];
@@ -487,6 +494,10 @@ export const startLeadMorningReport = async (
     return { skipped: true, reason: 'No pairs were sent on that day' };
   }
 
+  const existing = await LeadReportSession.findOne({ dateKey });
+  if (!force && existing?.reportSentAt && existing.stage !== 'idle') {
+    return { skipped: true, reason: 'Lead morning report already started', session: existing };
+  }
   const session = await ensureSessionFromReview(review, { leadOverride });
 
   // Refresh pending/submitted in case reviews arrived overnight.
@@ -549,6 +560,10 @@ const askAboutCurrentPair = async (session) => {
   const pair = pending[session.currentPairIndex];
   const review = await DailyReview.findOne({ dateKey: session.dateKey });
   const missing = missingMembersForPair(pair, review);
+  if (!missing.length || (session.verifyDecisions || []).some(d => buildPairKey(d.pair) === buildPairKey(pair))) {
+    session.currentPairIndex += 1;
+    return askAboutCurrentPair(session);
+  }
   const options = buildLeadPairOptions(pair, missing);
   session.stage = 'awaiting_pair_choice';
   session.currentPairOptions = options;
@@ -569,6 +584,7 @@ const askAboutCurrentPair = async (session) => {
 /** Show the next submitted pair for one-by-one verification. */
 const askAboutCurrentSubmittedPair = async (session) => {
   const submitted = session.submittedPairs || [];
+  session.currentVerifyIndex = nextUnverifiedIndex(submitted, session.verifyDecisions || [], session.currentVerifyIndex);
   if (session.currentVerifyIndex >= submitted.length) {
     session.currentPairIndex = 0;
     return askAboutCurrentPair(session);
@@ -890,11 +906,14 @@ export const syncLeadSessionAfterLateReview = async (dateKey, recoveredPair) => 
     (pair) => buildPairKey(pair) === pairKey
   );
 
+  const currentMissing = session.pendingPairs?.[session.currentPairIndex];
   session.pendingPairs = getPendingPairs(review.pairs, review);
-  session.submittedPairs = getSubmittedPairs(
-    review.pairs,
-    review.reviewedMembers
-  );
+  session.submittedPairs = mergeSubmittedPairs(session.submittedPairs || [],
+    getSubmittedPairs(review.pairs, review.reviewedMembers));
+  if (currentMissing) {
+    const index = session.pendingPairs.findIndex(p => buildPairKey(p) === buildPairKey(currentMissing));
+    session.currentPairIndex = Math.max(index, 0);
+  }
   session.pairs = review.pairs;
 
   const stillMissingFlow =

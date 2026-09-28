@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { usePrivateImage } from '../hooks/usePrivateImage.js';
 import { io } from 'socket.io-client';
-import { API, API_BASE, createSocket } from '../config/api.js';
+import { API, createSocket } from '../config/api.js';
 import './MemberRooms.css';
 
 function formatTime(iso) {
@@ -19,17 +20,12 @@ function snippet(text, max = 72) {
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
-function avatarSrc(path) {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return `${API_BASE}${path}`;
-}
-
 function MemberAvatar({ member, avatarUrl }) {
+  const src = usePrivateImage(avatarUrl);
   const [failed, setFailed] = useState(false);
   const initials = (member || '?').slice(0, 2).toUpperCase();
 
-  if (!avatarUrl || failed) {
+  if (!src || failed) {
     return (
       <span className="member-avatar fallback" aria-hidden>
         {initials}
@@ -40,7 +36,7 @@ function MemberAvatar({ member, avatarUrl }) {
   return (
     <img
       className="member-avatar"
-      src={avatarSrc(avatarUrl)}
+      src={src}
       alt=""
       loading="lazy"
       onError={() => setFailed(true)}

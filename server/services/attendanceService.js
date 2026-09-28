@@ -1,4 +1,5 @@
 import DailyReview from '../models/DailyReview.js';
+import { validateMonth } from './dateValidation.js';
 import { getAllMembers } from '../config/appConfig.js';
 import {
   getMonthSchedule,
@@ -63,9 +64,7 @@ const resolveDayAttendance = (member, dateKey, todayKey, review, scheduledPairs)
 export const getMonthlyPerformance = async (year, month) => {
   const y = Number(year);
   const m = Number(month);
-  if (!y || !m || m < 1 || m > 12) {
-    throw new Error('Invalid year or month');
-  }
+  validateMonth(y, m);
 
   const schedule = getMonthSchedule(y, m);
   const todayKey = getKarachiDateKey();

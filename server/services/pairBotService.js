@@ -29,6 +29,7 @@ import {
   getLeadReportSummary,
 } from './leadReportService.js';
 import DailyReview from '../models/DailyReview.js';
+import { validateMonth } from './dateValidation.js';
 
 export const getTodayPreview = async () => {
   const target = getActivePreviewTarget();
@@ -78,23 +79,21 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
     if (!isPastCronTimeToday(config.cronSchedule, 11, 30)) {
       return { skipped: true, reason: 'Too early for daily pairs (waits until 11:30 AM)' };
     }
-    const claimed = await claimCronJob(jobKey, { jobType: 'daily_pairs', dateKey });
-    if (!claimed) {
-      return { skipped: true, reason: 'Already sent today', pairsData, message };
-    }
-  } else {
-    const existingToday = await getPairRecordByDate(dateKey);
-    if (existingToday) {
-      return { skipped: true, reason: 'Already sent today', pairsData, message };
-    }
   }
+  const existingToday = await getPairRecordByDate(dateKey);
+  if (existingToday) return { skipped: true, reason: 'Already sent today', pairsData, message };
+  const claimed = await claimCronJob(jobKey, { jobType: 'daily_pairs', dateKey });
+  if (!claimed) return { skipped: true, reason: 'Already sent or in progress', pairsData, message };
 
+  let delivered = false;
   try {
     const result = await sendMatrixMessage(message, {
       kind: 'daily_pairs',
       dateKey,
       triggeredBy,
     });
+    delivered = true;
+    await completeCronJob(jobKey, result.event_id);
     await logOutgoingMessage(message, result.event_id, 'bot_pairs');
 
     const review = await ensureDailyReview({
@@ -128,13 +127,9 @@ export const sendDailyPairs = async (triggeredBy = 'manual') => {
       console.warn(`[thread] Draft seed failed: ${error.message}`);
     }
 
-    if (triggeredBy === 'cron') {
-      await completeCronJob(jobKey, result.event_id);
-    }
-
     return { skipped: false, pairsData, message, log };
   } catch (error) {
-    if (triggeredBy === 'cron') {
+    if (!delivered) {
       await releaseCronJob(jobKey);
     }
     throw error;
@@ -148,9 +143,7 @@ export const getLastSent = () => getLastPairRecord();
 export const getMonthlyPairs = (year, month) => {
   const y = Number(year);
   const m = Number(month);
-  if (!y || !m || m < 1 || m > 12) {
-    throw new Error('Invalid year or month');
-  }
+  validateMonth(y, m);
 
   return {
     year: y,

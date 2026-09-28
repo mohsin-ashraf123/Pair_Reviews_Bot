@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { previousMonthKey } from './dateValidation.js';
 import { config } from '../config/appConfig.js';
 import {
   sendDailyPairs,
@@ -27,6 +28,8 @@ let bossPrepareTask = null;
 let bossSendTask = null;
 let pairThreadTask = null;
 let rankingProcessTask = null;
+let monthlyGenerateTask = null;
+let monthlySendTask = null;
 let countdownInterval = null;
 
 const cronInFlight = {
@@ -151,7 +154,7 @@ export const startPairScheduler = () => {
               console.log(`[cron] Missing review follow-ups skipped: ${result.reason}`);
             } else {
               console.log(
-                `[cron] Missing review follow-ups sent for ${result.forDate} (${result.prompts.length} members)`
+                `[cron] Lead follow-up sent for ${result.forDate} (${result.lead || 'lead'})`
               );
             }
           } catch (error) {
@@ -295,12 +298,12 @@ export const startPairScheduler = () => {
 
   // --- Monthly Ranking Report Crons (1st of the month) ---
   // Generate at 10:00 AM on the 1st
-  cron.schedule(
+  if (!monthlyGenerateTask) monthlyGenerateTask = cron.schedule(
     '0 10 1 * *',
     () => runCronJob('monthlyGenerate', async () => {
       console.log('[cron] 1st of month 10:00 AM — generating scheduled monthly ranking report');
       try {
-        await generateMonthlyReport();
+        await generateMonthlyReport(previousMonthKey(getKarachiDateKey()));
       } catch (err) {
         console.error('[cron] Monthly ranking generate failed:', err.message);
       }
@@ -309,12 +312,12 @@ export const startPairScheduler = () => {
   );
 
   // Send at 06:00 PM on the 1st
-  cron.schedule(
+  if (!monthlySendTask) monthlySendTask = cron.schedule(
     '0 18 1 * *',
     () => runCronJob('monthlySend', async () => {
       console.log('[cron] 1st of month 06:00 PM — sending scheduled monthly ranking report');
       try {
-        await sendMonthlyReport();
+        await sendMonthlyReport(previousMonthKey(getKarachiDateKey()));
       } catch (err) {
         console.error('[cron] Monthly ranking send failed:', err.message);
       }

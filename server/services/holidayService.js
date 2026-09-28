@@ -1,4 +1,5 @@
 import Holiday from '../models/Holiday.js';
+import { isValidDateKey } from './dateValidation.js';
 
 /** In-memory set so working-day helpers stay sync (same as weekends). */
 let holidaySet = new Set();
@@ -26,7 +27,7 @@ export const listHolidayDateKeys = (year, month) => {
 };
 
 export const setHoliday = async (dateKey, holiday = true, label = 'Holiday') => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) {
+  if (!isValidDateKey(dateKey)) {
     throw new Error('dateKey must be YYYY-MM-DD');
   }
 

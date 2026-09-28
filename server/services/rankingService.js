@@ -2,6 +2,7 @@ import MonthlyMemberInsight from '../models/MonthlyMemberInsight.js';
 import MonthlyRankingReport from '../models/MonthlyRankingReport.js';
 import RoomMessage from '../models/RoomMessage.js';
 import DailyReview from '../models/DailyReview.js';
+import { isValidDateKey } from './dateValidation.js';
 import { config, getAllMembers } from '../config/appConfig.js';
 import {
   getMonthSchedule,
@@ -951,6 +952,10 @@ export const getRankingScheduleInfo = async () => {
  */
 export const backfillDateRange = async (startDateKey) => {
   const todayKey = getKarachiDateKey();
+  if (!isValidDateKey(startDateKey) || startDateKey > todayKey
+    || (Date.parse(todayKey) - Date.parse(startDateKey)) / 86400000 > 366) {
+    throw new Error('Backfill start must be a valid date within the past year');
+  }
   const results = [];
   let current = startDateKey;
 

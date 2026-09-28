@@ -6,6 +6,8 @@ import { getKarachiDateKey, formatDisplayDate } from './pairService.js';
 import { isTeamMember } from './memberService.js';
 import { isMemberRoom } from './memberRoomService.js';
 import { emitReviewUpdate } from './socketService.js';
+import { createKeyedQueue } from './keyedQueue.js';
+const queueAttendance = createKeyedQueue();
 
 /** Personal follow-up rooms — never count these for review attendance / live main chat. */
 const personalRoomIds = () =>
@@ -148,7 +150,7 @@ export const formatWrongPairAlert = (mentionedNames, pairs, senderName) => {
 
 export const buildPairKey = (pair) => [...pair].sort().join('|');
 
-export const recomputeReviewedMembers = async (dateKey) => {
+export const recomputeReviewedMembers = (dateKey) => queueAttendance(dateKey, async () => {
   const review = await DailyReview.findOne({ dateKey });
   if (!review?.pairsSentAt) return null;
 
@@ -192,7 +194,7 @@ export const recomputeReviewedMembers = async (dateKey) => {
   const state = buildReviewState(review);
   emitReviewUpdate(state);
   return state;
-};
+});
 
 /** Members already covered by a review or an attendance reason. */
 export const getAccountedMembers = (review) => {
@@ -328,6 +330,12 @@ export const recordReviewFromMessage = async (
   dateKey = getKarachiDateKey(),
   eventId = null
 ) => {
+  // Validate provenance before touching review flags or attendance.
+  if (!eventId) return { status: 'ignored' };
+  const source = await RoomMessage.findOne({ eventId });
+  if (!source || source.deletedAt || source.direction !== 'in'
+    || source.dateKey !== dateKey || source.roomId !== config.matrix.roomId
+    || personalRoomIds().includes(source.roomId)) return { status: 'ignored' };
   const review = await DailyReview.findOne({ dateKey });
   if (!review?.pairsSentAt) return { status: 'inactive' };
 
@@ -382,18 +390,21 @@ export const recordReviewFromMessage = async (
       ...mainRoomMessageFilter(),
     });
 
-    if (duplicate) {
+    if (duplicate && attendancePair.every(name => duplicate.matchedPair.includes(name))) {
       console.log(`[review] Duplicate pair review: ${matchedPair.join(' + ')} (${dateKey})`);
       await RoomMessage.updateOne(
         { eventId },
-        { reviewIssue: 'duplicate_pair', attemptedPair: matchedPair }
+        { reviewIssue: 'duplicate_pair', attemptedPair: matchedPair,
+          countsAsReview: true, matchedPair: attendancePair, pairKey }
       );
+      await recomputeReviewedMembers(dateKey);
       return { status: 'duplicate_pair', matchedPair, pairKey };
     }
 
     await RoomMessage.updateOne(
       { eventId },
-      { countsAsReview: true, matchedPair: attendancePair, pairKey }
+      { $set: { countsAsReview: true, matchedPair: attendancePair, pairKey },
+        $unset: { reviewIssue: 1, attemptedPair: 1 } }
     );
   }
 
@@ -420,11 +431,15 @@ export const recordReviewFromMessage = async (
 /** Undo review attendance when a review message is deleted in Element. */
 export const handleReviewMessageDeleted = async (eventId) => {
   const msg = await RoomMessage.findOne({ eventId });
-  if (!msg) return null;
+  if (!msg) {
+    await RoomMessage.updateOne({ eventId }, { $set: { deletedAt: new Date(), body: '' } }, { upsert: true });
+    return { deleted: true, eventId, reviewUpdated: false };
+  }
 
   const { dateKey, countsAsReview } = msg;
 
-  await RoomMessage.deleteOne({ eventId });
+  // Keep a tombstone so timeline recovery cannot resurrect redacted reviews.
+  await RoomMessage.updateOne({ eventId }, { $set: { deletedAt: new Date(), body: '' } });
 
   if (!countsAsReview) {
     return { deleted: true, eventId, reviewUpdated: false };
