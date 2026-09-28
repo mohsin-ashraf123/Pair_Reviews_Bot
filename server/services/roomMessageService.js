@@ -1,4 +1,5 @@
 import RoomMessage from '../models/RoomMessage.js';
+import { DecryptionRetryCache, fetchRecoveryEvents, REVIEW_RECOVERY_WINDOW_MS } from './reviewRecovery.js';
 import { config } from '../config/appConfig.js';
 import { getKarachiDateKey } from './pairService.js';
 import { resolveMemberName } from './memberService.js';
@@ -21,6 +22,7 @@ import {
 
 const LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const seenEvents = new Set();
+const processingMainEvents = new Set();
 
 /** Matrix edit events carry the new body under m.new_content and point at the original. */
 const getEditTargetEventId = (content = {}) => {
@@ -61,7 +63,6 @@ const normalizeEvent = (event, direction = 'in', botUserId = null) => {
 
   const eventId = event.event_id;
   if (!eventId || seenEvents.has(eventId)) return null;
-  seenEvents.add(eventId);
 
   const senderId = event.sender || '';
   const isBot = botUserId && senderId === botUserId;
@@ -468,8 +469,17 @@ export const handleIncomingMatrixMessage = async (roomId, event, botUserId) => {
   event.room_id = roomId;
   const payload = normalizeEvent(event, 'in', botUserId);
   if (!payload) return;
-
-  await persistAndBroadcastMessage(payload);
+  if (processingMainEvents.has(payload.eventId)) return;
+  processingMainEvents.add(payload.eventId);
+  try {
+    const saved = await persistAndBroadcastMessage(payload);
+    if (saved) {
+      seenEvents.add(payload.eventId);
+      undecryptableEventIds.delete(payload.eventId);
+    }
+  } finally {
+    processingMainEvents.delete(payload.eventId);
+  }
 };
 
 export const logOutgoingMessage = async (body, eventId, category = null, meta = {}) => {
@@ -581,8 +591,8 @@ export const getMemberRoomMessages = (roomId, limit = 20) =>
 const decryptPromptSent = new Set();
 let matrixListenerRegistered = false;
 let mainRoomReconcileTimer = null;
-/** Event ids we already know we cannot decrypt — skip forever this process. */
-const undecryptableEventIds = new Set();
+/** Keys may arrive later; a failed decrypt must never permanently suppress a review. */
+const undecryptableEventIds = new DecryptionRetryCache();
 let lastMainReconcileAt = 0;
 let mainReconcileInFlight = false;
 
@@ -729,7 +739,7 @@ export const reconcilePendingMemberReplies = async (client) => {
  */
 export const reconcileMainRoomReviews = async (
   client,
-  { limit = 30, maxAgeMs = 36 * 60 * 60 * 1000 } = {}
+  { limit = 50, maxAgeMs = REVIEW_RECOVERY_WINDOW_MS } = {}
 ) => {
   if (!client) return { checked: 0, processed: 0, decryptFailed: 0 };
   const roomId = config.matrix.roomId;
@@ -753,19 +763,19 @@ export const reconcileMainRoomReviews = async (
 
   try {
     const botUserId = await client.getUserId();
-    const res = await client.doRequest(
-      'GET',
-      `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/messages`,
-      { dir: 'b', limit: Math.min(Number(limit) || 30, 50) }
-    );
-
-    const chunk = [...(res?.chunk || [])].reverse();
+    const chunk = await fetchRecoveryEvents(client, roomId, { limit, oldestAllowed });
     for (const raw of chunk) {
       const eventId = raw?.event_id;
       const ts = Number(raw?.origin_server_ts || 0);
       if (ts && ts < oldestAllowed) continue;
+      if (raw.sender && raw.sender === botUserId) continue;
       if (eventId && undecryptableEventIds.has(eventId)) continue;
       if (eventId && seenEvents.has(eventId)) continue;
+      // Do not repeatedly decrypt already persisted history on every recovery pass.
+      if (eventId && await RoomMessage.exists({ eventId })) {
+        seenEvents.add(eventId);
+        continue;
+      }
 
       let event = raw;
 
