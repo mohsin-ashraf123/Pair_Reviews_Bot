@@ -55,7 +55,7 @@ function Ranking() {
       const [rankRes, insightRes, schedRes, reportsRes] = await Promise.all([
         axios.get(`${API}/ranking`, { params }),
         axios.get(`${API}/ranking/insights`, { params }),
-        axios.get(`${API}/ranking/schedule`),
+        axios.get(`${API}/ranking/schedule`, { params }),
         axios.get(`${API}/ranking/reports`)
       ]);
 
@@ -73,7 +73,9 @@ function Ranking() {
   }, []);
 
   useEffect(() => {
-    loadMonth();
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit' }).format(new Date()).split('-').map(Number);
+    const previous = new Date(Date.UTC(parts[0], parts[1] - 2, 1));
+    loadMonth(previous.getUTCFullYear(), previous.getUTCMonth() + 1);
   }, [loadMonth]);
 
   const monthOptions = useMemo(() => {
@@ -225,6 +227,8 @@ function Ranking() {
       {/* Header */}
       <div className="ranking-header">
         <div className="ranking-header-text">
+          <button className="btn primary" disabled={processing || loading} onClick={handleGenerate}>Generate / regenerate {monthLabel} preview</button>
+          <p>Choose a month to preview its report. Auto-generation: 1st at 10 AM; delivery: 6 PM (Karachi).</p>
           <p className="ranking-kicker">{view === 'ranking' ? 'Monthly Ranking' : 'Member Insights'}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <h2>{monthLabel || 'Member Ranking'}</h2>
@@ -289,9 +293,10 @@ function Ranking() {
                     </div>
                     {report.status === 'scheduled' && report.scheduledFor && (
                       <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '10px' }}>
-                        Sending on: {new Date(report.scheduledFor).toLocaleString()}
+                        Sending on: {new Date(report.scheduledFor).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) + ' PKT'}
                       </div>
                     )}
+                    {report.error && <p role="alert">{report.error}</p>}
                     {report.imageBase64 ? (
                       <img 
                         src={`data:image/png;base64,${report.imageBase64}`} 
@@ -299,7 +304,7 @@ function Ranking() {
                         style={{ width: '100%', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} 
                       />
                     ) : (
-                      <div style={{ fontSize: '12px', color: '#8b949e' }}>No image preview available</div>
+                      <pre style={{ whiteSpace: 'pre-wrap' }}>{report.reportText || 'Report not ready. Select this month and generate a preview.'}</pre>
                     )}
                   </div>
                 ))}
@@ -492,7 +497,7 @@ function Ranking() {
                 onClick={handleGenerate}
                 disabled={processing}
               >
-                📊 Generate Report
+                📊 Generate {monthLabel} Report
               </button>
               <button
                 className="ranking-btn"

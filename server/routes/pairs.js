@@ -884,7 +884,8 @@ router.get('/ranking/insights', async (req, res) => {
 
 router.get('/ranking/schedule', async (req, res) => {
   try {
-    res.json(await getRankingScheduleInfo());
+    const { year, month } = req.query;
+    res.json(await getRankingScheduleInfo(year && month ? `${year}-${String(month).padStart(2, '0')}` : undefined));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

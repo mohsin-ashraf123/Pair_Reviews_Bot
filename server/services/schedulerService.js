@@ -1,5 +1,5 @@
+import { reconcileMonthlyReport } from './monthlyReportScheduler.js';
 import cron from 'node-cron';
-import { previousMonthKey } from './dateValidation.js';
 import { config } from '../config/appConfig.js';
 import {
   sendDailyPairs,
@@ -14,8 +14,6 @@ import {
 import { postPairReviewThreadDigest } from './pairThreadService.js';
 import {
   processDateReviews,
-  generateMonthlyReport,
-  sendMonthlyReport,
 } from './rankingService.js';
 import { getNextDailySendTarget, getAllScheduleCountdowns, getKarachiDateKey } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
@@ -29,6 +27,7 @@ let bossSendTask = null;
 let pairThreadTask = null;
 let rankingProcessTask = null;
 let monthlyGenerateTask = null;
+let monthlyRecoveryTask = null;
 let monthlySendTask = null;
 let countdownInterval = null;
 
@@ -303,7 +302,7 @@ export const startPairScheduler = () => {
     () => runCronJob('monthlyGenerate', async () => {
       console.log('[cron] 1st of month 10:00 AM — generating scheduled monthly ranking report');
       try {
-        await generateMonthlyReport(previousMonthKey(getKarachiDateKey()));
+        await reconcileMonthlyReport();
       } catch (err) {
         console.error('[cron] Monthly ranking generate failed:', err.message);
       }
@@ -317,7 +316,7 @@ export const startPairScheduler = () => {
     () => runCronJob('monthlySend', async () => {
       console.log('[cron] 1st of month 06:00 PM — sending scheduled monthly ranking report');
       try {
-        await sendMonthlyReport(previousMonthKey(getKarachiDateKey()));
+        await reconcileMonthlyReport();
       } catch (err) {
         console.error('[cron] Monthly ranking send failed:', err.message);
       }
@@ -325,5 +324,10 @@ export const startPairScheduler = () => {
     { timezone: config.timezone }
   );
 
+  if (!monthlyRecoveryTask) {
+    const recover = () => reconcileMonthlyReport().catch(error => console.error('[ranking] Recovery:', error.message));
+    monthlyRecoveryTask = cron.schedule('*/10 * * * *', recover, { timezone: config.timezone });
+    recover();
+  }
   return pairsTask;
 };

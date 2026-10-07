@@ -1,3 +1,6 @@
+import { reportTimes, validateRankingOutput } from './monthlyReportPolicy.js';
+import { createKeyedQueue } from './keyedQueue.js';
+const reportQueue = createKeyedQueue();
 import MonthlyMemberInsight from '../models/MonthlyMemberInsight.js';
 import MonthlyRankingReport from '../models/MonthlyRankingReport.js';
 import RoomMessage from '../models/RoomMessage.js';
@@ -114,6 +117,9 @@ export const parseReviewInsights = async (reviewBody, pair, pairType) => {
     return { emptyReview: true, items: [] };
   }
 
+  reportTimes(monthKey);
+  const existing = await MonthlyRankingReport.findOne({ monthKey });
+  if (existing?.eventId) throw new Error('This report has already been sent and cannot be regenerated.');
   const settings = await getAiSettingsPublic();
   if (!settings.configured || !settings.modelId) {
     // Cannot use AI — try regex fallback
@@ -309,6 +315,7 @@ export const processDateReviews = async (dateKey) => {
   const query = {
     dateKey,
     countsAsReview: true,
+    reviewIssue: { $ne: 'duplicate_pair' },
     deletedAt: { $exists: false },
   };
   if (personal.length) query.roomId = { $nin: personal };
@@ -690,7 +697,17 @@ const buildRankingUserPrompt = (monthKey, memberDataList) => {
 /**
  * Generate the monthly ranking report — AI analyzes all data and ranks members.
  */
-export const generateMonthlyReport = async (monthKeyInput) => {
+export const generateMonthlyReport = (monthKeyInput) => reportQueue(monthKeyInput || 'current', async () => {
+  try { return await generateMonthlyReportInternal(monthKeyInput); }
+  catch (error) {
+    if (monthKeyInput && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthKeyInput)) {
+      await MonthlyRankingReport.updateOne({ monthKey: monthKeyInput, eventId: { $exists: false }, 'rankings.0': { $exists: false } },
+        { $set: { status: 'failed', error: error.message }, $unset: { scheduledFor: 1 } });
+    }
+    throw error;
+  }
+});
+const generateMonthlyReportInternal = async (monthKeyInput) => {
   let monthKey = monthKeyInput;
   if (!monthKey) {
     const { year, month } = getCurrentMonthParts();
@@ -734,13 +751,8 @@ export const generateMonthlyReport = async (monthKeyInput) => {
     .trim();
 
   let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    // If JSON parse fails, use the raw text as report
-    console.warn('[ranking] AI did not return valid JSON, using raw text');
-    parsed = { rankings: [], reportText: cleaned };
-  }
+  try { parsed = JSON.parse(cleaned); } catch { throw new Error('AI returned invalid or empty JSON. Please retry generation.'); }
+  validateRankingOutput(parsed, getAllMembers());
 
   const aiRankings = (parsed.rankings || []).map((r, i) => {
     const score = Math.max(1, Math.min(10, Number(r.score) || 5));
@@ -764,6 +776,8 @@ export const generateMonthlyReport = async (monthKeyInput) => {
     { monthKey },
     {
       $set: {
+        imageBase64: '',
+        error: null,
         generatedAt: new Date(),
         modelId: settings.modelId,
         modelName: settings.modelName || settings.modelId,
@@ -786,11 +800,12 @@ export const generateMonthlyReport = async (monthKeyInput) => {
   }
 
   // Calculate the 1st of the next month at 6:00 PM
-  const scheduledTime = new Date(yearStr, monthStr, 1, 18, 0, 0, 0); // monthStr is 1-indexed string, so passing it to Date as month index means the NEXT month
+  const scheduledTime = reportTimes(monthKey).sendAt;
 
   // If the scheduled time is in the past (e.g. manual generation after the 1st), keep it as 'draft'
   if (scheduledTime < new Date()) {
     report.status = 'draft';
+    report.scheduledFor = undefined;
   } else {
     report.status = 'scheduled';
     report.scheduledFor = scheduledTime;
@@ -810,7 +825,8 @@ export const generateMonthlyReport = async (monthKeyInput) => {
 /**
  * Send the monthly report to the MAIN pair reviews room via Matrix.
  */
-export const sendMonthlyReport = async (monthKeyInput) => {
+export const sendMonthlyReport = (monthKeyInput) => reportQueue(monthKeyInput || 'current', () => sendMonthlyReportInternal(monthKeyInput));
+const sendMonthlyReportInternal = async (monthKeyInput) => {
   let monthKey = monthKeyInput;
   if (!monthKey) {
     const { year, month } = getCurrentMonthParts();
@@ -824,15 +840,8 @@ export const sendMonthlyReport = async (monthKeyInput) => {
   }
 
   let report = await MonthlyRankingReport.findOne({ monthKey });
-  if (!report?.reportText?.trim() || report.status === 'failed') {
-    // Generate on the spot
-    await generateMonthlyReport(monthKey);
-    report = await MonthlyRankingReport.findOne({ monthKey });
-  }
-
-  if (!report?.reportText?.trim()) {
-    return { skipped: true, reason: 'No report to send' };
-  }
+  if (!report) throw new Error('Generate and review this month on the dashboard before sending.');
+  validateRankingOutput(report, getAllMembers());
 
   if (report.eventId) {
     return { skipped: true, reason: 'Already sent', eventId: report.eventId };
@@ -909,10 +918,11 @@ export const getMonthlyInsights = async (monthKey, member) => {
 /**
  * Schedule info for the ranking page.
  */
-export const getRankingScheduleInfo = async () => {
+export const getRankingScheduleInfo = async (monthKeyInput) => {
   const todayKey = getKarachiDateKey();
-  const { year, month } = getCurrentMonthParts();
-  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const monthKey = monthKeyInput || todayKey.slice(0, 7);
+  const { generateAt, sendAt } = reportTimes(monthKey);
+  const [year, month] = monthKey.split('-').map(Number);
   const schedule = getMonthSchedule(year, month);
   const workingDays = schedule.map((d) => d.dateKey);
   const lastWorkingDay = workingDays[workingDays.length - 1] || null;
@@ -930,6 +940,9 @@ export const getRankingScheduleInfo = async () => {
     year,
     month,
     todayKey,
+    generateAt,
+    sendAt,
+    timezone: 'Asia/Karachi',
     totalWorkingDays: workingDays.length,
     processedDays: processedCount.length,
     processedDateKeys: processedCount,
