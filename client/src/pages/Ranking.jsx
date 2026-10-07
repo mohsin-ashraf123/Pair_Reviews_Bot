@@ -228,6 +228,9 @@ function Ranking() {
       <div className="ranking-header">
         <div className="ranking-header-text">
           <button className="btn primary" disabled={processing || loading} onClick={handleGenerate}>Generate / regenerate {monthLabel} preview</button>
+          <button className="ranking-btn" disabled={processing || loading || !schedule?.report?.generatedAt || Boolean(schedule?.report?.eventId) || schedule?.report?.status === 'failed'} onClick={handleSend}>
+            {schedule?.report?.eventId ? `${monthLabel} report sent` : `Send ${monthLabel} report to room now`}
+          </button>
           <p>Choose a month to preview its report. Auto-generation: 1st at 10 AM; delivery: 6 PM (Karachi).</p>
           <p className="ranking-kicker">{view === 'ranking' ? 'Monthly Ranking' : 'Member Insights'}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -504,7 +507,7 @@ function Ranking() {
                 onClick={handleSend}
                 disabled={processing}
               >
-                📤 Send to Room
+                📤 Send {monthLabel} to Room Now
               </button>
             </div>
           </div>
