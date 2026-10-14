@@ -1,6 +1,6 @@
 import { reconcileMonthlyReport } from './monthlyReportScheduler.js';
 import cron from 'node-cron';
-import { config } from '../config/appConfig.js';
+import { config, SOLO_ROSTER_DATE } from '../config/appConfig.js';
 import {
   sendDailyPairs,
   sendMissedReviewNotice,
@@ -92,6 +92,11 @@ export const startPairScheduler = () => {
   }
 
   if (!pairsTask) {
+    // Operator-requested rollout: announce today's new roster on deployment.
+    // sendDailyPairs uses the normal durable claim and already-sent checks.
+    if (getKarachiDateKey() === SOLO_ROSTER_DATE) {
+      sendDailyPairs('manual').catch(error => console.error('[roster] Activation send failed:', error.message));
+    }
     pairsTask = cron.schedule(
       config.cronSchedule,
       () =>

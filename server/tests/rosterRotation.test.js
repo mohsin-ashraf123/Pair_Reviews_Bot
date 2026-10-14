@@ -7,7 +7,7 @@ import { handleLeadReply, formatLeadReportComplete } from '../services/leadRepor
 import DailyReview from '../models/DailyReview.js';
 import LeadReportSession from '../models/LeadReportSession.js';
 
-test('four pairs cover all eight members once, and every eligible partnership rotates', () => {
+test('historical eight-member roster covers every assigned member before October 14', () => {
   const partnerships = new Set();
   const leads = new Set();
   for (const month of [10, 11, 12]) {
@@ -15,6 +15,7 @@ test('four pairs cover all eight members once, and every eligible partnership ro
       const data = buildDailyPairsFromDateKey(row.dateKey);
       assert.equal(data.allPairs.length, 4);
       if (row.dateKey < '2026-10-08') continue;
+      if (row.dateKey >= '2026-10-14') continue;
       assert.equal(data.developerPairs.length, 2);
       assert.ok(data.developerPairs.every(pair => pair.length === 2));
       assert.equal(data.qaPair.length, 2);
@@ -24,7 +25,7 @@ test('four pairs cover all eight members once, and every eligible partnership ro
       assert.ok(config.developers.includes(data.mixedPair[0]));
       assert.ok(config.qaTeam.includes(data.mixedPair[1]));
       assert.equal(data.allPairs.flat().length, 8);
-      assert.deepEqual(new Set(data.allPairs.flat()), new Set(getAllMembers()));
+      assert.deepEqual(new Set(data.allPairs.flat()), new Set(getAllMembers(row.dateKey)));
       assert.ok(!data.allPairs.flat().includes('Hamza'));
       for (const pair of data.allPairs) {
         assert.equal(pair.length, 2);
@@ -36,8 +37,8 @@ test('four pairs cover all eight members once, and every eligible partnership ro
     }
   }
   // Every partnership type rotates and each member has one partner per day.
-  assert.ok(partnerships.size >= 18);
-  assert.deepEqual(leads, new Set(getAllMembers()));
+  assert.ok(partnerships.size >= 8);
+  assert.ok([...leads].every(name => getAllMembers('2026-10-13').includes(name)));
 });
 
 test('October 8 preserves the pairs actually sent on roster activation day', () => {
@@ -54,7 +55,7 @@ test('October 8 preserves the pairs actually sent on roster activation day', () 
 });
 
 test('no pair repeats within the previous two working days', () => {
-  const weekdays = [...getMonthSchedule(2026, 10), ...getMonthSchedule(2026, 11), ...getMonthSchedule(2026, 12)].filter(row => row.dateKey >= '2026-10-08');
+  const weekdays = getMonthSchedule(2026, 10).filter(row => row.dateKey >= '2026-10-08' && row.dateKey < '2026-10-14');
   for (let i = 1; i < weekdays.length; i++) {
     const recent = new Set(weekdays.slice(Math.max(0, i - 2), i).flatMap(row => row.pairs));
     for (const pair of weekdays[i].pairs) assert.ok(!recent.has(pair), `${pair} repeats on ${weekdays[i].dateKey}`);
@@ -71,6 +72,30 @@ test('historical roster survives the resignation and month transition', () => {
   assert.ok(!getAllMembers('2026-11-01').includes('Hamza'));
   assert.ok(!buildDailyPairsFromDateKey('2026-10-08').allPairs.flat().includes('Hamza'));
   assert.ok(parseMentionedMembers('Hamza + Uzair: review done').includes('Hamza'));
+});
+
+test('October 14 roster has Farhan solo, two mixed pairs and one developer pair', () => {
+  let previous = new Set();
+  const partnerships = new Set();
+  for (const month of [10, 11, 12]) for (const row of getMonthSchedule(2026, month)) {
+    if (row.dateKey < '2026-10-14') continue;
+    const data = buildDailyPairsFromDateKey(row.dateKey);
+    assert.deepEqual(data.allPairs[0], ['Farhan']);
+    assert.deepEqual(new Set(data.allPairs.flat()), new Set(getAllMembers(row.dateKey)));
+    assert.equal(data.allPairs.flat().length, 7);
+    assert.equal(data.mixedPairs.length, 2);
+    assert.ok(data.mixedPairs.every(pair => config.developers.includes(pair[0]) && ['Aqeel','Adil'].includes(pair[1])));
+    assert.ok(data.allPairs.slice(1).every(pair => pair.length === 2 && !pair.includes('Farhan')));
+    const current = new Set(data.allPairs.slice(1).map(pair => [...pair].sort().join('|')));
+    assert.ok([...current].every(key => !previous.has(key)));
+    for (const key of current) partnerships.add(key);
+    previous = current;
+    assert.deepEqual(findMatchingPair(parseMentionedMembers('Farhan: Review completed. No issues.'), data.allPairs), ['Farhan']);
+    assert.doesNotMatch(formatDailyMessage(data), /Habiba|Hamza/);
+  }
+  assert.equal(partnerships.size, 14); // Six developer pairs and eight mixed pairs.
+  assert.ok(getAllMembers('2026-10-13').includes('Habiba'));
+  assert.ok(!getAllMembers('2026-10-14').includes('Habiba'));
 });
 
 for (const stage of ['awaiting_verify', 'awaiting_missing_member_reason', 'awaiting_momin_check']) {

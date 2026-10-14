@@ -7,6 +7,7 @@ const dailyPairRecordSchema = new mongoose.Schema(
     developerPairs: [[String]],
     qaPair: [String],
     mixedPair: [String],
+    mixedPairs: [[String]],
     allPairs: [[String]],
     message: { type: String, required: true },
     matrixEventId: String,

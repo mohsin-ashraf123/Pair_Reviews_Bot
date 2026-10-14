@@ -1051,7 +1051,7 @@ router.get('/status', async (req, res) => {
       },
       team: {
         developers: config.developers,
-        qaTeam: config.qaTeam,
+        qaTeam: (await import('../config/appConfig.js')).getQaForDate(),
       },
     });
   } catch (error) {

@@ -1,4 +1,4 @@
-import { config, getDevelopersForDate, ROSTER_CHANGE_DATE } from '../config/appConfig.js';
+import { config, getDevelopersForDate, getQaForDate, ROSTER_CHANGE_DATE, SOLO_ROSTER_DATE } from '../config/appConfig.js';
 import { isHoliday } from './holidayService.js';
 import { validateMonth } from './dateValidation.js';
 
@@ -277,6 +277,38 @@ const getDynamicPairs = (dateKey) => {
 export const buildDailyPairsFromDateKey = (dateKey) => {
   const dayIndex = getDayIndexFromDateKey(dateKey);
   const developers = getDevelopersForDate(dateKey);
+  if (dateKey.replace(/^TEST-/, '') >= SOLO_ROSTER_DATE) {
+    const qa = getQaForDate(dateKey);
+    const rotating = developers.filter(name => name !== 'Farhan');
+    if (rotating.length !== 4 || qa.length !== 2) throw new Error('Solo roster requires Farhan, four other developers and two QA');
+    // Six developer combinations, each with both assignments of the remaining
+    // developers to QA. A seeded cycle keeps previews and sent pairs identical.
+    const choices = [];
+    for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
+      const remaining = rotating.filter((_, i) => i !== a && i !== b);
+      for (const order of [remaining, [...remaining].reverse()]) {
+        choices.push([[rotating[a], rotating[b]], [order[0], qa[0]], [order[1], qa[1]]]);
+      }
+    }
+    const offset = dayIndex - getDayIndexFromDateKey(SOLO_ROSTER_DATE);
+    let previous = new Set();
+    let selected;
+    const used = new Map();
+    for (let day = 0; day <= offset; day++) {
+      const fresh = choices.filter(groups => groups.every(pair => !previous.has(canonicalPairKey(pair))));
+      const pool = fresh.length ? fresh : choices;
+      const score = groups => groups.reduce((sum, pair) => sum + (used.get(canonicalPairKey(pair)) || 0), 0);
+      const minimum = Math.min(...pool.map(score));
+      const best = pool.filter(groups => score(groups) === minimum);
+      selected = best[((day + 1) * 7) % best.length];
+      previous = new Set(selected.map(canonicalPairKey));
+      for (const key of previous) used.set(key, (used.get(key) || 0) + 1);
+    }
+    const allPairs = [['Farhan'], ...selected];
+    return { dateKey, dayIndex, lead: getLead(dayIndex, [...developers, ...qa]),
+      developerPairs: [['Farhan'], selected[0]], qaPair: [], mixedPair: [],
+      mixedPairs: selected.slice(1), allPairs };
+  }
   const legacy = dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE;
   if (!legacy && (developers.length !== 5 || config.qaTeam.length !== 3)) {
     throw new Error('Four dynamic pairs require five developers and three QA members');
@@ -373,6 +405,7 @@ export const getMonthSchedule = (year, month) => {
       developerPairs: pairsData.developerPairs,
       qaPair: pairsData.qaPair,
       mixedPair: pairsData.mixedPair,
+      mixedPairs: pairsData.mixedPairs || [],
       pairs: pairsData.allPairs.map(formatPairLine),
       isHoliday: isHoliday(dateKey),
     });
