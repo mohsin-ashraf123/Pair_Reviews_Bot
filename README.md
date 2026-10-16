@@ -84,8 +84,8 @@ cd client && npm install && npm run dev
 
 ## How pairs work
 
-- **Developers** — 2-person pairs rotate daily  
-- **QA** — fixed: Habiba + Aqeel + Adil  
+- **Active team** — five developers and three QA members; Hamza is excluded from new pairs and lead rotation. Historical records retain the old roster.
+- **Four dynamic pairs** — two developer/developer pairs, one QA/QA pair, and one developer/QA pair. All partners rotate; each member appears once per day.
 - **Lead** — rotates daily across the full team  
 - **Preview** — before the send time show today; after it show tomorrow  
 
@@ -94,8 +94,8 @@ Pairs Today
 
 Uzair + Mohsin
 Saad + Farhan
-Faz + Hamza
-Habiba + Aqeel + Adil
+Habiba + Aqeel
+Faz + Adil
 
 Uzair will make sure all above today
 ```
