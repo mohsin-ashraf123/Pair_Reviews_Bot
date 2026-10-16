@@ -39,14 +39,14 @@ test('four pairs cover all eight members once, and every eligible partnership ro
 });
 
 test('historical roster survives the resignation and month transition', () => {
-  const before = buildDailyPairsFromDateKey('2026-10-15');
+  const before = buildDailyPairsFromDateKey('2026-10-07');
   assert.equal(before.developerPairs.length, 3);
   assert.equal(before.qaPair.length, 3);
   assert.ok(before.allPairs.flat().includes('Hamza'));
   assert.ok(getAllMembers('2026-09-01').includes('Hamza'));
   assert.ok(getAllMembers('2026-10-01').includes('Hamza'));
   assert.ok(!getAllMembers('2026-11-01').includes('Hamza'));
-  assert.ok(!buildDailyPairsFromDateKey('2026-10-16').allPairs.flat().includes('Hamza'));
+  assert.ok(!buildDailyPairsFromDateKey('2026-10-08').allPairs.flat().includes('Hamza'));
   assert.ok(parseMentionedMembers('Hamza + Uzair: review done').includes('Hamza'));
 });
 

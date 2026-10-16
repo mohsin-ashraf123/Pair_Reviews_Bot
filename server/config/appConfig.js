@@ -110,7 +110,8 @@ const onRailway = Boolean(
     process.env.RAILWAY_SERVICE_ID
 );
 
-export const ROSTER_CHANGE_DATE = '2026-10-16';
+// Production service date when the eight-member rotation was activated.
+export const ROSTER_CHANGE_DATE = '2026-10-08';
 const legacyDevelopers = parseList(process.env.DEVELOPERS, ['Uzair', 'Mohsin', 'Saad', 'Farhan', 'Faz', 'Hamza']);
 
 export const config = {
