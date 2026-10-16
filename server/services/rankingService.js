@@ -1,11 +1,14 @@
 import { reportTimes, validateRankingOutput } from './monthlyReportPolicy.js';
 import { createKeyedQueue } from './keyedQueue.js';
 const reportQueue = createKeyedQueue();
+import InsightProcessingState from '../models/InsightProcessingState.js';
+import { insightSourceHash } from './insightSource.js';
+const insightQueue = createKeyedQueue();
 import MonthlyMemberInsight from '../models/MonthlyMemberInsight.js';
 import MonthlyRankingReport from '../models/MonthlyRankingReport.js';
 import RoomMessage from '../models/RoomMessage.js';
 import DailyReview from '../models/DailyReview.js';
-import { isValidDateKey } from './dateValidation.js';
+import { isValidDateKey, previousMonthKey } from './dateValidation.js';
 import { config, getAllMembers } from '../config/appConfig.js';
 import {
   getMonthSchedule,
@@ -117,9 +120,6 @@ export const parseReviewInsights = async (reviewBody, pair, pairType) => {
     return { emptyReview: true, items: [] };
   }
 
-  reportTimes(monthKey);
-  const existing = await MonthlyRankingReport.findOne({ monthKey });
-  if (existing?.eventId) throw new Error('This report has already been sent and cannot be regenerated.');
   const settings = await getAiSettingsPublic();
   if (!settings.configured || !settings.modelId) {
     // Cannot use AI — try regex fallback
@@ -307,8 +307,9 @@ const fallbackParse = (body, pair) => {
  * Load all review messages for a dateKey, parse them via AI,
  * and upsert MonthlyMemberInsight documents.
  */
-export const processDateReviews = async (dateKey) => {
-  if (!dateKey) throw new Error('dateKey is required');
+export const processDateReviews = (dateKey, options = {}) => insightQueue(dateKey, () => processDateReviewsInternal(dateKey, options));
+const processDateReviewsInternal = async (dateKey, { force = false } = {}) => {
+  if (!isValidDateKey(dateKey)) throw new Error('A valid dateKey is required');
   const monthKey = dateKey.slice(0, 7);
 
   const personal = personalRoomIds();
@@ -322,9 +323,10 @@ export const processDateReviews = async (dateKey) => {
   else if (config.matrix.roomId) query.roomId = config.matrix.roomId;
 
   const messages = await RoomMessage.find(query).sort({ sentAt: 1 }).lean();
-  if (!messages.length) {
-    return { dateKey, processed: 0, skipped: 'No review messages found' };
-  }
+  const sourceHash = insightSourceHash(messages);
+  const state = await InsightProcessingState.findOne({ dateKey }).lean();
+  if (!force && state?.sourceHash === sourceHash) return { dateKey, processed: 0, skipped: 'Already processed' };
+  if (!messages.length && !state) return { dateKey, processed: 0, skipped: 'No review messages found' };
 
   const qaSet = new Set(config.qaTeam || []);
   const allMembers = getAllMembers(dateKey);
@@ -340,6 +342,13 @@ export const processDateReviews = async (dateKey) => {
     const pairLabel = pair.join(' + ');
 
     const parsed = await parseReviewInsights(msg.body || '', pair, pairType);
+
+    // Persist coverage even for a member with no individually attributed item.
+    for (const member of pair) {
+      if (allMembers.includes(member) && !memberInsightsMap[member]) {
+        memberInsightsMap[member] = { pairLabel, pairType, items: [], emptyReview: false };
+      }
+    }
 
     // If empty review -> create an insight for each pair member
     if (parsed.emptyReview) {
@@ -363,7 +372,7 @@ export const processDateReviews = async (dateKey) => {
       const matchedMember = allMembers.find(
         (m) => m.toLowerCase() === item.member.toLowerCase()
       );
-      if (!matchedMember) continue;
+      if (!matchedMember || !pair.includes(matchedMember)) continue;
 
       if (!memberInsightsMap[matchedMember]) {
         memberInsightsMap[matchedMember] = {
@@ -409,6 +418,9 @@ export const processDateReviews = async (dateKey) => {
     upserted += 1;
   }
 
+  // Only remove stale derived rows after every source message parsed successfully.
+  await MonthlyMemberInsight.deleteMany({ dateKey, member: { $nin: Object.keys(memberInsightsMap) } });
+  await InsightProcessingState.findOneAndUpdate({ dateKey }, { $set: { sourceHash, processedAt: new Date() } }, { upsert: true });
   return { dateKey, processed: upserted, reviews: results };
 };
 
@@ -714,6 +726,9 @@ const generateMonthlyReportInternal = async (monthKeyInput) => {
     monthKey = `${year}-${String(month).padStart(2, '0')}`;
   }
 
+  reportTimes(monthKey);
+  const existing = await MonthlyRankingReport.findOne({ monthKey });
+  if (existing?.eventId) throw new Error('This report has already been sent and cannot be regenerated.');
   const settings = await getAiSettingsPublic();
   if (!settings.configured || !settings.modelId) {
     throw Object.assign(new Error('Configure AI model in Settings first'), {
@@ -963,16 +978,19 @@ export const getRankingScheduleInfo = async (monthKeyInput) => {
 /**
  * Backfill: process all working days from startDate to today.
  */
-export const backfillDateRange = async (startDateKey) => {
+export const backfillDateRange = async (startDateKey, requestedEndDateKey) => {
   const todayKey = getKarachiDateKey();
   if (!isValidDateKey(startDateKey) || startDateKey > todayKey
     || (Date.parse(todayKey) - Date.parse(startDateKey)) / 86400000 > 366) {
     throw new Error('Backfill start must be a valid date within the past year');
   }
+  const endDateKey = requestedEndDateKey || todayKey;
+  if (!isValidDateKey(endDateKey) || endDateKey < startDateKey) throw new Error('Invalid backfill end date');
+  const effectiveEnd = endDateKey < todayKey ? endDateKey : todayKey;
   const results = [];
   let current = startDateKey;
 
-  while (current <= todayKey) {
+  while (current <= effectiveEnd) {
     if (!isNonWorkingDay(current)) {
       try {
         const result = await processDateReviews(current);
@@ -984,7 +1002,7 @@ export const backfillDateRange = async (startDateKey) => {
     current = addCalendarDays(current, 1);
   }
 
-  return { startDateKey, endDateKey: todayKey, results };
+  return { startDateKey, endDateKey: effectiveEnd, results, failedDays: results.filter(r => r.error).length };
 };
 
 /**
@@ -1171,3 +1189,23 @@ async function generateLeaderboardImageBuffer(report) {
     if (browser) await browser.close();
   }
 }
+
+let recoveringInsights = false;
+export const reconcileReviewInsights = async () => {
+  if (recoveringInsights) return;
+  recoveringInsights = true;
+  try {
+    const today = getKarachiDateKey();
+    const previous = previousMonthKey(today);
+    const previousReport = await MonthlyRankingReport.findOne({ monthKey: previous }).lean();
+    const start = (previousReport?.eventId ? today.slice(0, 7) : previous) + '-01';
+    const dates = new Set([
+      ...await RoomMessage.distinct('dateKey', { dateKey: { $gte: start, $lte: today }, countsAsReview: true }),
+      ...await InsightProcessingState.distinct('dateKey', { dateKey: { $gte: start, $lte: today } }),
+    ]);
+    for (const dateKey of [...dates].sort()) {
+      try { await processDateReviews(dateKey); }
+      catch (error) { console.error('[ranking] Insight recovery failed for ' + dateKey + ': ' + error.message); }
+    }
+  } finally { recoveringInsights = false; }
+};

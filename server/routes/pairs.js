@@ -1,3 +1,4 @@
+import { validateMonth } from '../services/dateValidation.js';
 import express from 'express';
 import { config, isMatrixConfigured } from '../config/appConfig.js';
 import {
@@ -885,7 +886,9 @@ router.get('/ranking/schedule', async (req, res) => {
 router.get('/ranking/reports', async (req, res) => {
   try {
     const MonthlyRankingReport = (await import('../models/MonthlyRankingReport.js')).default;
-    const reports = await MonthlyRankingReport.find()
+    const { year, month } = req.query;
+    if (year || month) validateMonth(Number(year), Number(month));
+    const reports = await MonthlyRankingReport.find(year && month ? { monthKey: year + '-' + String(month).padStart(2, '0') } : {})
       .sort({ monthKey: -1 })
       .lean();
     res.json(reports);
@@ -1006,7 +1009,7 @@ router.post('/ranking/backfill', async (req, res) => {
       typeof req.body?.startDateKey === 'string' && req.body.startDateKey.trim()
         ? req.body.startDateKey.trim()
         : '2026-09-01';
-    res.json(await backfillDateRange(startDateKey));
+    res.json(await backfillDateRange(startDateKey, req.body?.endDateKey));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

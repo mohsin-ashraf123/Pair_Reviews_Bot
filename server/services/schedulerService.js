@@ -14,6 +14,7 @@ import {
 import { postPairReviewThreadDigest } from './pairThreadService.js';
 import {
   processDateReviews,
+  reconcileReviewInsights,
 } from './rankingService.js';
 import { getNextDailySendTarget, getAllScheduleCountdowns, getKarachiDateKey } from './pairService.js';
 import { emitCountdownTick, emitSchedulesTick } from './socketService.js';
@@ -26,6 +27,7 @@ let bossPrepareTask = null;
 let bossSendTask = null;
 let pairThreadTask = null;
 let rankingProcessTask = null;
+let insightRecoveryTask = null;
 let monthlyGenerateTask = null;
 let monthlyRecoveryTask = null;
 let monthlySendTask = null;
@@ -266,6 +268,13 @@ export const startPairScheduler = () => {
     console.log(
       `Boss report send scheduler active: "${config.bossReportSendCronSchedule}" (${config.timezone})`
     );
+  }
+
+  // Catch up after missed cron runs and process late/edited reviews within 10 minutes.
+  if (!insightRecoveryTask) {
+    const recoverInsights = () => reconcileReviewInsights().catch(error => console.error('[ranking] Insight recovery:', error.message));
+    insightRecoveryTask = cron.schedule('*/10 * * * *', recoverInsights, { timezone: config.timezone });
+    recoverInsights();
   }
 
   // --- Ranking: daily review processing + monthly report ---

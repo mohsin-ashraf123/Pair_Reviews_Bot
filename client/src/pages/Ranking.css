@@ -8,6 +8,30 @@
   background: var(--surface-elevated);
 }
 
+.ranking-report-card {
+  width: min(100%, 480px);
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+}
+
+.ranking-report-preview {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #111820;
+}
+
+.ranking-report-download {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
 /* ---- Header ---- */
 .ranking-header {
   display: flex;

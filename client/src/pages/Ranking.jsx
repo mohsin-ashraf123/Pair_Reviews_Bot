@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { API } from '../config/api.js';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
@@ -33,6 +33,7 @@ function RankingSkeleton() {
 
 /* ---------- Main Page ---------- */
 function Ranking() {
+  const loadId = useRef(0);
   const [data, setData] = useState(null);
   const [insights, setInsights] = useState(null);
   const [schedule, setSchedule] = useState(null);
@@ -48,6 +49,7 @@ function Ranking() {
   const [selectedMember, setSelectedMember] = useState(null);
 
   const loadMonth = useCallback(async (year, month) => {
+    const requestId = ++loadId.current;
     setLoading(true);
     setError('');
     try {
@@ -56,26 +58,30 @@ function Ranking() {
         axios.get(`${API}/ranking`, { params }),
         axios.get(`${API}/ranking/insights`, { params }),
         axios.get(`${API}/ranking/schedule`, { params }),
-        axios.get(`${API}/ranking/reports`)
+        axios.get(`${API}/ranking/reports`, { params })
       ]);
 
+      if (requestId !== loadId.current) return;
       setData(rankRes.data);
       setInsights(insightRes.data);
       setSchedule(schedRes.data);
       setReports(reportsRes.data || []);
       setSelected(`${rankRes.data.year}-${rankRes.data.month}`);
     } catch (err) {
+      if (requestId !== loadId.current) return;
       setData(null);
+      setReports([]);
+      setInsights(null);
+      setSchedule(null);
       setError(err.response?.data?.message || 'Failed to load ranking');
     } finally {
-      setLoading(false);
+      if (requestId === loadId.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit' }).format(new Date()).split('-').map(Number);
-    const previous = new Date(Date.UTC(parts[0], parts[1] - 2, 1));
-    loadMonth(previous.getUTCFullYear(), previous.getUTCMonth() + 1);
+    loadMonth(parts[0], parts[1]);
   }, [loadMonth]);
 
   const monthOptions = useMemo(() => {
@@ -85,6 +91,8 @@ function Ranking() {
 
   const handleMonthChange = (value) => {
     setSelected(value);
+    setSelectedMember(null);
+    setActionMsg('');
     const [year, month] = value.split('-').map(Number);
     loadMonth(year, month);
   };
@@ -94,7 +102,7 @@ function Ranking() {
     setActionMsg('');
     try {
       const today = new Date();
-      const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(today);
       await axios.post(`${API}/ranking/process`, { dateKey });
       setActionMsg('\u2705 Reviews processed for today');
       loadMonth(data?.year, data?.month);
@@ -115,8 +123,11 @@ function Ranking() {
 
       const res = await axios.post(`${API}/ranking/backfill`, {
         startDateKey,
+        endDateKey: `${year}-${month}-${new Date(Number(year), Number(month), 0).getDate()}`,
       });
-      const count = res.data?.results?.length || 0;
+      const failures = (res.data?.results || []).filter(r => r.error);
+      if (failures.length) throw new Error(`${failures.length} day(s) failed: ${failures[0].error}`);
+      const count = (res.data?.results || []).filter(r => r.processed > 0).length;
       setActionMsg(`✅ Backfill complete — ${count} day(s) processed`);
       loadMonth(data?.year, data?.month);
     } catch (err) {
@@ -227,7 +238,7 @@ function Ranking() {
       {/* Header */}
       <div className="ranking-header">
         <div className="ranking-header-text">
-          <button className="btn primary" disabled={processing || loading} onClick={handleGenerate}>Generate / regenerate {monthLabel} preview</button>
+          <button className="ranking-btn primary" disabled={processing || loading} onClick={handleGenerate}>Generate / regenerate {monthLabel} preview</button>
           <button className="ranking-btn" disabled={processing || loading || !schedule?.report?.generatedAt || Boolean(schedule?.report?.eventId) || schedule?.report?.status === 'failed'} onClick={handleSend}>
             {schedule?.report?.eventId ? `${monthLabel} report sent` : `Send ${monthLabel} report to room now`}
           </button>
@@ -277,12 +288,12 @@ function Ranking() {
       {view === 'ranking' ? (
         <>
           {/* Scheduled Preview & History Box */}
-          {reports && reports.length > 0 && (
+          {reports.some(report => report.monthKey === data?.monthKey) && (
             <div style={{ marginBottom: '40px', background: 'rgba(255, 255, 255, 0.02)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <h3 className="ranking-section-title" style={{ marginTop: 0 }}>📅 Scheduled Preview & History</h3>
+              <h3 className="ranking-section-title" style={{ marginTop: 0 }}>📅 {monthLabel} Report</h3>
               <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '10px' }}>
-                {reports.map(report => (
-                  <div key={report.monthKey} style={{ minWidth: '300px', background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                {reports.filter(report => report.monthKey === data?.monthKey).map(report => (
+                  <div key={report.monthKey} className="ranking-report-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                       <strong>{report.monthKey}</strong>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -301,11 +312,14 @@ function Ranking() {
                     )}
                     {report.error && <p role="alert">{report.error}</p>}
                     {report.imageBase64 ? (
-                      <img 
-                        src={`data:image/png;base64,${report.imageBase64}`} 
-                        alt="Preview" 
-                        style={{ width: '100%', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} 
-                      />
+                      <a href={`data:image/png;base64,${report.imageBase64}`} download={`ranking-${report.monthKey}.png`} title="Download full report image">
+                        <img
+                          src={`data:image/png;base64,${report.imageBase64}`}
+                          alt={`${monthLabel} report preview — download full image`}
+                          className="ranking-report-preview"
+                        />
+                      <span className="ranking-report-download">Download full report</span>
+                      </a>
                     ) : (
                       <pre style={{ whiteSpace: 'pre-wrap' }}>{report.reportText || 'Report not ready. Select this month and generate a preview.'}</pre>
                     )}
@@ -334,7 +348,7 @@ function Ranking() {
                   data.rankings.map((r) => (
                     <tr key={r.member}>
                       <td className="rank-cell">
-                        {r.rank <= 3 ? (
+                        {!data.hasAiRanking ? '—' : r.rank <= 3 ? (
                           <span className="rank-medal" title={`Rank ${r.rank}`}><MedalIcon rank={r.rank} /></span>
                         ) : (
                           r.rank
@@ -349,12 +363,12 @@ function Ranking() {
                         </div>
                       </td>
                       <td>
-                        <span className={`score-pill ${scoreClass(r.score)}`}>
-                          {r.score}/10
+                        <span className={`score-pill ${data.hasAiRanking ? scoreClass(r.score) : ''}`}>
+                          {data.hasAiRanking ? `${r.score}/10` : 'Not ranked'}
                         </span>
                       </td>
                       <td className="oneliner-cell">
-                        {r.oneLiner || '—'}
+                        {r.oneLiner || (data.hasAiRanking ? '—' : 'Monthly report pending')}
                       </td>
                       <td>
                         <div className="stat-mini">
