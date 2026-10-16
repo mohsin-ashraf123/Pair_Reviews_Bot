@@ -208,6 +208,11 @@ export const getLead = (dayIndex, members = getAllMembersFromConfig()) => {
 };
 
 const canonicalPairKey = (pair) => [...pair].sort((a, b) => a.localeCompare(b)).join('|');
+const rosterActivationPairs = {
+  developerPairs: [['Mohsin', 'Saad'], ['Farhan', 'Faz']],
+  qaPair: ['Habiba', 'Aqeel'],
+  mixedPair: ['Uzair', 'Adil'],
+};
 const rotatedGroups = (members, offset) => {
   const rotated = [...members.slice(offset % members.length), ...members.slice(0, offset % members.length)];
   return [rotated.slice(0, 2), rotated.slice(2)];
@@ -228,6 +233,11 @@ const getDynamicPairs = (dateKey) => {
     const key = cursor.toISOString().slice(0, 10);
     cursor.setUTCDate(cursor.getUTCDate() + 1);
     if (getDayOfWeek(key) === 0 || getDayOfWeek(key) === 6 || isHoliday(key)) continue;
+    if (key === ROSTER_CHANGE_DATE) {
+      result = rosterActivationPairs;
+      history.push([...result.developerPairs, result.qaPair, result.mixedPair]);
+      continue;
+    }
     const recentHistory = history.slice(-2);
     const developerAndMixedHistory = recentHistory.flatMap(dayPairs => [...dayPairs.slice(0, 2), dayPairs[3]]);
     const recentDeveloperPairs = new Set(developerAndMixedHistory.map(canonicalPairKey));

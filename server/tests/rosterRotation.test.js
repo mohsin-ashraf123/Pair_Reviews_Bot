@@ -40,6 +40,19 @@ test('four pairs cover all eight members once, and every eligible partnership ro
   assert.deepEqual(leads, new Set(getAllMembers()));
 });
 
+test('October 8 preserves the pairs actually sent on roster activation day', () => {
+  const schedule = buildDailyPairsFromDateKey('2026-10-08');
+  assert.deepEqual(schedule.allPairs, [
+    ['Mohsin', 'Saad'],
+    ['Farhan', 'Faz'],
+    ['Habiba', 'Aqeel'],
+    ['Uzair', 'Adil'],
+  ]);
+  assert.deepEqual(getMonthSchedule(2026, 10).find(row => row.dateKey === '2026-10-08').pairs, [
+    'Mohsin + Saad', 'Farhan + Faz', 'Habiba + Aqeel', 'Uzair + Adil',
+  ]);
+});
+
 test('no pair repeats within the previous two working days', () => {
   const weekdays = [...getMonthSchedule(2026, 10), ...getMonthSchedule(2026, 11), ...getMonthSchedule(2026, 12)].filter(row => row.dateKey >= '2026-10-08');
   for (let i = 1; i < weekdays.length; i++) {
