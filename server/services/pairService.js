@@ -207,6 +207,63 @@ export const getLead = (dayIndex, members = getAllMembersFromConfig()) => {
   return members[dayIndex % members.length];
 };
 
+const canonicalPairKey = (pair) => [...pair].sort((a, b) => a.localeCompare(b)).join('|');
+const rotatedGroups = (members, offset) => {
+  const rotated = [...members.slice(offset % members.length), ...members.slice(0, offset % members.length)];
+  return [rotated.slice(0, 2), rotated.slice(2)];
+};
+
+// Calculate the schedule in chronological order and avoid reusing any pairing
+// from the prior two workdays when a valid matching is available.
+const getDynamicPairs = (dateKey) => {
+  const currentKey = dateKey.replace(/^TEST-/, '');
+  const developers = config.developers;
+  const qa = config.qaTeam;
+  const [year, month, day] = currentKey.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, day));
+  const cursor = new Date(`${ROSTER_CHANGE_DATE}T00:00:00Z`);
+  const history = [];
+  let result = null;
+  while (cursor <= target) {
+    const key = cursor.toISOString().slice(0, 10);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (getDayOfWeek(key) === 0 || getDayOfWeek(key) === 6 || isHoliday(key)) continue;
+    const recentHistory = history.slice(-2);
+    const developerAndMixedHistory = recentHistory.flatMap(dayPairs => [...dayPairs.slice(0, 2), dayPairs[3]]);
+    const recentDeveloperPairs = new Set(developerAndMixedHistory.map(canonicalPairKey));
+    const recentQaPairs = new Set(recentHistory.map(dayPairs => canonicalPairKey(dayPairs[2])));
+    const index = getDayIndexFromDateKey(key);
+    const candidates = [];
+    for (let d = 0; d < developers.length; d += 1) {
+      for (let q = 0; q < qa.length; q += 1) {
+        const mixed = [developers[(index + d) % developers.length], qa[(index + q) % qa.length]];
+        const remaining = developers.filter(name => name !== mixed[0]);
+        const qaPair = qa.filter(name => name !== mixed[1]);
+        for (let rotation = 0; rotation < remaining.length; rotation += 1) {
+          const [first, second] = rotatedGroups(remaining, rotation);
+          const allPairs = [[...first], [...second], qaPair, mixed];
+          const developerRepeats = [...allPairs.slice(0, 2), allPairs[3]]
+            .filter(pair => recentDeveloperPairs.has(canonicalPairKey(pair))).length;
+          const qaRepeats = Number(recentQaPairs.has(canonicalPairKey(qaPair)));
+          candidates.push({ allPairs, developerRepeats, qaRepeats });
+        }
+      }
+    }
+    const minDeveloperRepeats = Math.min(...candidates.map(candidate => candidate.developerRepeats));
+    const developerOptions = candidates.filter(candidate => candidate.developerRepeats === minDeveloperRepeats);
+    const minQaRepeats = Math.min(...developerOptions.map(candidate => candidate.qaRepeats));
+    const best = developerOptions.filter(candidate => candidate.qaRepeats === minQaRepeats);
+    const chosen = best[index % best.length];
+    result = {
+      developerPairs: chosen.allPairs.slice(0, 2),
+      qaPair: chosen.allPairs[2],
+      mixedPair: chosen.allPairs[3],
+    };
+    history.push([...result.developerPairs, result.qaPair, result.mixedPair]);
+    if (history.length > 2) history.shift();
+  }
+  return result;
+};
 export const buildDailyPairsFromDateKey = (dateKey) => {
   const dayIndex = getDayIndexFromDateKey(dateKey);
   const developers = getDevelopersForDate(dateKey);
@@ -214,9 +271,10 @@ export const buildDailyPairsFromDateKey = (dateKey) => {
   if (!legacy && (developers.length !== 5 || config.qaTeam.length !== 3)) {
     throw new Error('Four dynamic pairs require five developers and three QA members');
   }
-  const mixedPair = legacy ? [] : [developers[dayIndex % developers.length], config.qaTeam[dayIndex % config.qaTeam.length]];
-  const devPairs = getDeveloperPairs(legacy ? dayIndex : Math.floor(dayIndex / 5), developers.filter((name) => !mixedPair.includes(name)));
-  const qaPair = config.qaTeam.filter((name) => !mixedPair.includes(name));
+  const { developerPairs: dynamicDeveloperPairs, qaPair: dynamicQaPair, mixedPair: dynamicMixedPair } = legacy ? {} : getDynamicPairs(dateKey);
+  const mixedPair = legacy ? [] : dynamicMixedPair;
+  const devPairs = legacy ? getDeveloperPairs(dayIndex, developers) : dynamicDeveloperPairs;
+  const qaPair = legacy ? [...config.qaTeam] : dynamicQaPair;
   const lead = getLead(dayIndex, [...developers, ...config.qaTeam]);
 
   return {
@@ -226,7 +284,7 @@ export const buildDailyPairsFromDateKey = (dateKey) => {
     developerPairs: devPairs,
     qaPair,
     mixedPair,
-    allPairs: [...devPairs, qaPair, ...(mixedPair.length ? [mixedPair] : [])],
+    allPairs: legacy ? [...devPairs, qaPair] : [...devPairs, qaPair, mixedPair],
   };
 };
 

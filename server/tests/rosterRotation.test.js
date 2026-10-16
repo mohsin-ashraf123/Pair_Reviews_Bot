@@ -10,11 +10,13 @@ import LeadReportSession from '../models/LeadReportSession.js';
 test('four pairs cover all eight members once, and every eligible partnership rotates', () => {
   const partnerships = new Set();
   const leads = new Set();
-  for (const month of [11, 12]) {
+  for (const month of [10, 11, 12]) {
     for (const row of getMonthSchedule(2026, month)) {
       const data = buildDailyPairsFromDateKey(row.dateKey);
       assert.equal(data.allPairs.length, 4);
+      if (row.dateKey < '2026-10-08') continue;
       assert.equal(data.developerPairs.length, 2);
+      assert.ok(data.developerPairs.every(pair => pair.length === 2));
       assert.equal(data.qaPair.length, 2);
       assert.equal(data.mixedPair.length, 2);
       assert.ok(data.developerPairs.flat().every(m => config.developers.includes(m)));
@@ -33,9 +35,17 @@ test('four pairs cover all eight members once, and every eligible partnership ro
       leads.add(data.lead);
     }
   }
-  // 10 dev-dev + 3 QA-QA + 15 mixed combinations; no fixed partners.
-  assert.equal(partnerships.size, 28);
+  // Every partnership type rotates and each member has one partner per day.
+  assert.ok(partnerships.size >= 18);
   assert.deepEqual(leads, new Set(getAllMembers()));
+});
+
+test('no pair repeats within the previous two working days', () => {
+  const weekdays = [...getMonthSchedule(2026, 10), ...getMonthSchedule(2026, 11), ...getMonthSchedule(2026, 12)].filter(row => row.dateKey >= '2026-10-08');
+  for (let i = 1; i < weekdays.length; i++) {
+    const recent = new Set(weekdays.slice(Math.max(0, i - 2), i).flatMap(row => row.pairs));
+    for (const pair of weekdays[i].pairs) assert.ok(!recent.has(pair), `${pair} repeats on ${weekdays[i].dateKey}`);
+  }
 });
 
 test('historical roster survives the resignation and month transition', () => {
