@@ -1,7 +1,7 @@
 import DailyReview from '../models/DailyReview.js';
 import DailyPairRecord from '../models/DailyPairRecord.js';
 import RoomMessage from '../models/RoomMessage.js';
-import { config, getAllMembers } from '../config/appConfig.js';
+import { config, getKnownMembers } from '../config/appConfig.js';
 import { getKarachiDateKey, formatDisplayDate } from './pairService.js';
 import { isTeamMember } from './memberService.js';
 import { isMemberRoom } from './memberRoomService.js';
@@ -45,7 +45,7 @@ export const extractReviewNameLine = (body) => {
   for (const line of lines.slice(0, 4)) {
     if (!/\+/.test(line)) continue;
     const cleaned = stripSuffix(line);
-    const members = getAllMembers();
+    const members = getKnownMembers();
     const hits = members.filter((name) =>
       new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i').test(cleaned)
     );
@@ -60,7 +60,7 @@ export const parseMentionedMembers = (body) => {
   const line = extractReviewNameLine(body);
   if (!line) return [];
 
-  const members = getAllMembers();
+  const members = getKnownMembers();
   const sorted = [...members].sort((a, b) => b.length - a.length);
   const found = [];
 

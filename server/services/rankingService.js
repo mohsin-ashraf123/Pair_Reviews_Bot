@@ -49,7 +49,7 @@ const buildParseSystemPrompt = () =>
     'You are a review parser. Given a pair-review message and pair metadata,',
     'extract each team member\'s SUGGESTION, CONCERN, or ISSUE entries.',
     '',
-    'Developer pairs have 2 members. QA pairs have 3 members.',
+    'Current developer, QA and mixed developer/QA pairs each have 2 members. Historical QA groups may have 3. Always use the supplied pair members list.',
     '',
     'Templates that reviews follow:',
     'Developer: [PAIR]\\n[TYPE] SUGGESTION|CONCERN|ISSUE\\nMEMBER1 : [TEXT]\\n[TYPE]\\nMEMBER2 : [TEXT]',
@@ -327,7 +327,7 @@ export const processDateReviews = async (dateKey) => {
   }
 
   const qaSet = new Set(config.qaTeam || []);
-  const allMembers = getAllMembers();
+  const allMembers = getAllMembers(dateKey);
 
   const results = [];
   const memberInsightsMap = {}; // member -> aggregated data
@@ -336,7 +336,7 @@ export const processDateReviews = async (dateKey) => {
     const pair = msg.matchedPair || [];
     if (!pair.length) continue;
 
-    const pairType = pair.some((m) => qaSet.has(m)) ? 'qa' : 'developer';
+    const pairType = pair.every((m) => qaSet.has(m)) ? 'qa' : pair.some((m) => qaSet.has(m)) ? 'mixed' : 'developer';
     const pairLabel = pair.join(' + ');
 
     const parsed = await parseReviewInsights(msg.body || '', pair, pairType);
@@ -429,7 +429,7 @@ const isForgotExcused = (reason) => {
  * AI will use these stats + actual insights to determine rankings.
  */
 const buildMemberStats = async (monthKey, schedule, todayKey) => {
-  const allMembers = getAllMembers();
+  const allMembers = getAllMembers(`${monthKey}-01`);
   const dateKeys = schedule.map((d) => d.dateKey);
 
   // Load attendance data
@@ -752,7 +752,7 @@ const generateMonthlyReportInternal = async (monthKeyInput) => {
 
   let parsed;
   try { parsed = JSON.parse(cleaned); } catch { throw new Error('AI returned invalid or empty JSON. Please retry generation.'); }
-  validateRankingOutput(parsed, getAllMembers());
+  validateRankingOutput(parsed, getAllMembers(`${monthKey}-01`));
 
   const aiRankings = (parsed.rankings || []).map((r, i) => {
     const score = Math.max(1, Math.min(10, Number(r.score) || 5));
@@ -841,7 +841,7 @@ const sendMonthlyReportInternal = async (monthKeyInput) => {
 
   let report = await MonthlyRankingReport.findOne({ monthKey });
   if (!report) throw new Error('Generate and review this month on the dashboard before sending.');
-  validateRankingOutput(report, getAllMembers());
+  validateRankingOutput(report, getAllMembers(`${monthKey}-01`));
 
   if (report.eventId) {
     return { skipped: true, reason: 'Already sent', eventId: report.eventId };

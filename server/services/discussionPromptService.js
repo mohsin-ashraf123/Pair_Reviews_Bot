@@ -25,7 +25,7 @@ export const isNoIssuesReview = (body = '') => NO_ISSUES_RE.test(String(body).tr
 
 const isQaPair = (pair = []) => {
   const qa = new Set(config.qaTeam || []);
-  return pair.length >= 3 && pair.every((name) => qa.has(name));
+  return pair.length >= 2 && pair.every((name) => qa.has(name));
 };
 
 /** Prefer QA rotation order Habiba → Adil → Aqeel when present. */

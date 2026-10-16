@@ -110,10 +110,12 @@ const onRailway = Boolean(
     process.env.RAILWAY_SERVICE_ID
 );
 
+export const ROSTER_CHANGE_DATE = '2026-10-16';
+const legacyDevelopers = parseList(process.env.DEVELOPERS, ['Uzair', 'Mohsin', 'Saad', 'Farhan', 'Faz', 'Hamza']);
+
 export const config = {
-  developers: parseList(process.env.DEVELOPERS, [
-    'Uzair', 'Mohsin', 'Saad', 'Farhan', 'Faz', 'Hamza',
-  ]),
+  legacyDevelopers,
+  developers: legacyDevelopers.filter((name) => name.toLowerCase() !== 'hamza'),
   qaTeam: parseList(process.env.QA_TEAM, ['Habiba', 'Aqeel', 'Adil']),
   timezone: process.env.CRON_TIMEZONE || 'Asia/Karachi',
   /**
@@ -179,4 +181,7 @@ export const isMatrixConfigured = () =>
       (config.matrix.accessToken || (config.matrix.user && config.matrix.password))
   );
 
-export const getAllMembers = () => [...config.developers, ...config.qaTeam];
+export const getDevelopersForDate = (dateKey = '9999-12-31') =>
+  dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE ? config.legacyDevelopers : config.developers;
+export const getAllMembers = (dateKey) => [...getDevelopersForDate(dateKey), ...config.qaTeam];
+export const getKnownMembers = () => [...new Set([...config.legacyDevelopers, ...config.developers, ...config.qaTeam])];

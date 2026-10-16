@@ -1,4 +1,4 @@
-import { config, getAllMembers } from '../config/appConfig.js';
+import { config, getKnownMembers } from '../config/appConfig.js';
 
 let matrixIdToName = new Map();
 let initialized = false;
@@ -11,7 +11,7 @@ const parseMemberMap = () => {
 
 /** Match @user:server to team name via display name or localpart. */
 const guessNameFromUserId = (userId, displayName = '') => {
-  const members = getAllMembers();
+  const members = getKnownMembers();
   const haystack = `${displayName} ${userId}`.toLowerCase();
 
   for (const name of members) {
@@ -70,7 +70,7 @@ export const resolveMemberName = (userId, displayName = '') => {
   return null;
 };
 
-export const isTeamMember = (name) => getAllMembers().includes(name);
+export const isTeamMember = (name) => getKnownMembers().includes(name);
 
 export const isMemberMapReady = () => initialized;
 

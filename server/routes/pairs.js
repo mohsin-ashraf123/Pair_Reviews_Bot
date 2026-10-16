@@ -458,7 +458,7 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
     const {
       formatLeadReportKickoff,
       formatSinglePairVerifyQuestion,
-      formatMominCheckQuestion,
+      completeCurrentVerification,
       formatPairChoiceQuestion,
       formatForgotReasonQuestion,
       formatMissingMemberQuestion,
@@ -509,17 +509,8 @@ router.post('/member-rooms/resend-lead-prompt', async (req, res) => {
       const missing = pair.filter(m => !(review?.reviewedMembers || []).includes(m));
       message = formatMissingMemberQuestion(pair, missing, session.currentPairOptions || [], session.currentVerifyIndex, session.submittedPairs.length);
     } else if (session.stage === 'awaiting_momin_check') {
-      const pair =
-        session.pendingVerify?.pair ||
-        (session.submittedPairs || [])[session.currentVerifyIndex || 0];
-      if (!pair) {
-        return res.status(400).json({ message: 'No pair left for Momin check' });
-      }
-      message = formatMominCheckQuestion(
-        pair,
-        session.currentVerifyIndex || 0,
-        (session.submittedPairs || []).length
-      );
+      const result = await completeCurrentVerification(session);
+      return res.json({ message: 'Continued verification without the retired cross-pair check', ...result });
     } else if (session.stage === 'awaiting_pair_choice') {
       const pair = session.pendingPairs[session.currentPairIndex];
       message = formatPairChoiceQuestion(

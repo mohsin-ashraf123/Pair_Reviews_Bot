@@ -26,7 +26,7 @@ const monthlyMemberInsightSchema = new mongoose.Schema(
     pairLabel: String,
     pairType: {
       type: String,
-      enum: ['developer', 'qa'],
+      enum: ['developer', 'qa', 'mixed'],
       default: 'developer',
     },
     items: { type: [insightItemSchema], default: [] },

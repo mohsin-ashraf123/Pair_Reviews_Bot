@@ -16,7 +16,7 @@ export const reconcileMonthlyReport = async (now = new Date()) => {
     const report = await MonthlyRankingReport.findOne({ monthKey });
     if (report?.eventId) return;
     let valid = false;
-    try { validateRankingOutput(report, getAllMembers()); valid = true; } catch {}
+    try { validateRankingOutput(report, getAllMembers(`${monthKey}-01`)); valid = true; } catch {}
     if (!valid) {
       try { await generateMonthlyReport(monthKey); }
       catch (error) {

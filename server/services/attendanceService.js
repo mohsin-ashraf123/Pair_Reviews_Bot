@@ -68,7 +68,7 @@ export const getMonthlyPerformance = async (year, month) => {
 
   const schedule = getMonthSchedule(y, m);
   const todayKey = getKarachiDateKey();
-  const members = getAllMembers();
+  const members = getAllMembers(`${y}-${String(m).padStart(2, '0')}-01`);
   const dateKeys = schedule.map((row) => row.dateKey);
 
   const reviews = await DailyReview.find({ dateKey: { $in: dateKeys } });

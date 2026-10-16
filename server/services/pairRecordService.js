@@ -15,6 +15,7 @@ export const savePairRecord = async ({
       lead: pairsData.lead,
       developerPairs: pairsData.developerPairs,
       qaPair: pairsData.qaPair,
+      mixedPair: pairsData.mixedPair,
       allPairs: pairsData.allPairs,
       message,
       matrixEventId: matrixEventId || null,

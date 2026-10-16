@@ -1,4 +1,4 @@
-import { config } from '../config/appConfig.js';
+import { config, getDevelopersForDate, ROSTER_CHANGE_DATE } from '../config/appConfig.js';
 import { isHoliday } from './holidayService.js';
 import { validateMonth } from './dateValidation.js';
 
@@ -209,9 +209,15 @@ export const getLead = (dayIndex, members = getAllMembersFromConfig()) => {
 
 export const buildDailyPairsFromDateKey = (dateKey) => {
   const dayIndex = getDayIndexFromDateKey(dateKey);
-  const devPairs = getDeveloperPairs(dayIndex);
-  const qaPair = [...config.qaTeam];
-  const lead = getLead(dayIndex);
+  const developers = getDevelopersForDate(dateKey);
+  const legacy = dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE;
+  if (!legacy && (developers.length !== 5 || config.qaTeam.length !== 3)) {
+    throw new Error('Four dynamic pairs require five developers and three QA members');
+  }
+  const mixedPair = legacy ? [] : [developers[dayIndex % developers.length], config.qaTeam[dayIndex % config.qaTeam.length]];
+  const devPairs = getDeveloperPairs(legacy ? dayIndex : Math.floor(dayIndex / 5), developers.filter((name) => !mixedPair.includes(name)));
+  const qaPair = config.qaTeam.filter((name) => !mixedPair.includes(name));
+  const lead = getLead(dayIndex, [...developers, ...config.qaTeam]);
 
   return {
     dateKey,
@@ -219,7 +225,8 @@ export const buildDailyPairsFromDateKey = (dateKey) => {
     lead,
     developerPairs: devPairs,
     qaPair,
-    allPairs: [...devPairs, qaPair],
+    mixedPair,
+    allPairs: [...devPairs, qaPair, ...(mixedPair.length ? [mixedPair] : [])],
   };
 };
 
@@ -267,10 +274,6 @@ export const getActivePreviewTarget = (date = new Date()) => {
 
 export const formatPairLine = (pair) => pair.join(' + ');
 
-/** Static Momin duty line on every daily pairs post (lead line below rotates). */
-export const MOMIN_DUTY_LINE =
-  'Momin: cross-pair testing and review logging.';
-
 export const formatDailyMessage = (pairsData) => {
   const lines = pairsData.allPairs.map(formatPairLine);
   return [
@@ -278,7 +281,6 @@ export const formatDailyMessage = (pairsData) => {
     '',
     ...lines,
     '',
-    MOMIN_DUTY_LINE,
     `${pairsData.lead}: ensure completion of the above today.`,
   ].join('\n');
 };
@@ -302,6 +304,7 @@ export const getMonthSchedule = (year, month) => {
       lead: pairsData.lead,
       developerPairs: pairsData.developerPairs,
       qaPair: pairsData.qaPair,
+      mixedPair: pairsData.mixedPair,
       pairs: pairsData.allPairs.map(formatPairLine),
       isHoliday: isHoliday(dateKey),
     });

@@ -145,16 +145,6 @@ export const formatSinglePairVerifyQuestion = async (
   return lines.join('\n');
 };
 
-/** After each pair verify — lead confirms Momin Sir’s cross-pair duty. */
-export const formatMominCheckQuestion = (pair, index, total) =>
-  [
-    `Momin check ${index + 1}/${total}: ${formatPairLabel(pair)}`,
-    '',
-    'Did Momin Sir do cross-pair testing and review logging for this pair?',
-    '',
-    'Reply: YES or NO',
-  ].join('\n');
-
 const ACTIVE_LEAD_STAGES = [
   'awaiting_ready',
   'awaiting_verify',
@@ -249,9 +239,6 @@ export const formatForgotReasonQuestion = (pair) =>
 export const formatLeadReportComplete = (session) => {
   const verified = (session.verifyDecisions || []).filter((d) => d.verified).length;
   const totalVerified = (session.verifyDecisions || []).length;
-  const mominDone = (session.verifyDecisions || []).filter(
-    (d) => d.mominCrossChecked === true
-  ).length;
   const missingLines = (session.pairDecisions || []).map((decision) => {
     const reason = decision.forgotReason
       ? `${decision.label} — reason: ${decision.forgotReason}`
@@ -264,9 +251,6 @@ export const formatLeadReportComplete = (session) => {
     '',
     totalVerified
       ? `Verified reviews: ${verified}/${totalVerified}`
-      : null,
-    totalVerified
-      ? `Momin cross-pair checks: ${mominDone}/${totalVerified}`
       : null,
     missingLines.length
       ? ['Missing pairs:', '', ...missingLines].join('\n')
@@ -605,18 +589,22 @@ const askAboutCurrentSubmittedPair = async (session) => {
   return { status: 'awaiting_verify', ack: null };
 };
 
-const askMominCheckForCurrentPair = async (session) => {
-  const submitted = session.submittedPairs || [];
-  const pair =
-    session.pendingVerify?.pair || submitted[session.currentVerifyIndex];
-  const index = session.currentVerifyIndex || 0;
-  session.stage = 'awaiting_momin_check';
+export const completeCurrentVerification = async (session) => {
+  const pending = session.pendingVerify;
+  const pair = pending?.pair || (session.submittedPairs || [])[session.currentVerifyIndex];
+  if (pair && !pending) return askAboutCurrentSubmittedPair(session);
+  if (pair && !(session.verifyDecisions || []).some((decision) => buildPairKey(decision.pair) === buildPairKey(pair))) {
+    session.verifyDecisions.push({
+      pair, verified: Boolean(pending.verified),
+      absentMembers: pending.absentMembers || [],
+      halfDayMembers: pending.halfDayMembers || [],
+      forgotMissing: Boolean(pending.forgotMissing), decidedAt: new Date(),
+    });
+  }
+  session.pendingVerify = undefined;
+  session.currentVerifyIndex += 1;
   await session.save();
-
-  const question = formatMominCheckQuestion(pair, index, submitted.length);
-  await sendToLead(session, question, 'bot_dm_prompt');
-  emitMemberRoomUpdate({ dateKey: session.dateKey, leadReport: session.toObject() });
-  return { status: 'awaiting_momin_check', ack: null };
+  return askAboutCurrentSubmittedPair(session);
 };
 
 /** Handle a reply in the lead's personal room for an active report session. */
@@ -703,7 +691,7 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
 
     session.markModified('pendingVerify');
     await session.save();
-    return askMominCheckForCurrentPair(session);
+    return completeCurrentVerification(session);
   }
 
   if (session.stage === 'awaiting_missing_member_reason') {
@@ -732,36 +720,12 @@ export const handleLeadReply = async (member, roomId, body, eventId) => {
     }
 
     await session.save();
-    return askMominCheckForCurrentPair(session);
+    return completeCurrentVerification(session);
   }
 
+  // Continue sessions created before the cross-pair check was retired.
   if (session.stage === 'awaiting_momin_check') {
-    const answer = parseYesNo(body);
-    if (!answer) {
-      return {
-        status: 'invalid',
-        ack: 'Please reply YES or NO — did Momin Sir do cross-pair testing for this pair?',
-      };
-    }
-
-    const pending = session.pendingVerify;
-    const pair =
-      pending?.pair || (session.submittedPairs || [])[session.currentVerifyIndex];
-    if (pair) {
-      session.verifyDecisions.push({
-        pair,
-        verified: pending ? Boolean(pending.verified) : true,
-        mominCrossChecked: answer === 'yes',
-        absentMembers: pending?.absentMembers || [],
-        halfDayMembers: pending?.halfDayMembers || [],
-        forgotMissing: Boolean(pending?.forgotMissing),
-        decidedAt: new Date(),
-      });
-    }
-    session.pendingVerify = undefined;
-    session.currentVerifyIndex += 1;
-    await session.save();
-    return askAboutCurrentSubmittedPair(session);
+    return completeCurrentVerification(session);
   }
 
   if (session.stage === 'awaiting_pair_choice') {

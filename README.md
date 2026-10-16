@@ -100,6 +100,8 @@ Habiba + Aqeel + Adil
 Uzair will make sure all above today
 ```
 
+The lead verifies each submitted review directly; there is no Momin cross-pair verification step. The existing `DEVELOPERS` environment value may retain Hamza for historical schedules; the active roster filters him out.
+
 ## Daily schedule (Mon–Fri, Asia/Karachi)
 
 | Time | What happens | Where |
