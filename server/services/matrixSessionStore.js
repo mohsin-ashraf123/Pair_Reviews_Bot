@@ -6,10 +6,14 @@ import mongoose from 'mongoose';
 import MatrixDeviceState from '../models/MatrixDeviceState.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const matrixDataDir = path.join(__dirname, '..', 'data', 'matrix');
+// Separate hosts must never run copies of the same Olm/Megolm device state.
+// A recovery worker can opt into its own durable device without overwriting
+// the production deployment's primary keys or session.
+const STORE_KEY = process.env.MATRIX_DEVICE_STORE_KEY || 'primary';
+if (!/^[a-zA-Z0-9_-]+$/.test(STORE_KEY)) throw new Error('Invalid MATRIX_DEVICE_STORE_KEY');
+const baseDataDir = path.join(__dirname, '..', 'data', 'matrix');
+export const matrixDataDir = STORE_KEY === 'primary' ? baseDataDir : path.join(baseDataDir, STORE_KEY);
 export const sessionPath = path.join(matrixDataDir, 'session.json');
-
-const STORE_KEY = 'primary';
 
 const ensureDir = (dir) => {
   fs.mkdirSync(dir, { recursive: true });
