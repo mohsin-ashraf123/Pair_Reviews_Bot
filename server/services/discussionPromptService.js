@@ -10,7 +10,7 @@ import {
   isNonWorkingDay,
 } from './pairService.js';
 import { buildPairKey, getPendingPairs } from './reviewService.js';
-import { sendMatrixMessageToRoom } from './matrixService.js';
+import { sendMatrixMessageToRoom } from './matrixGateway.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate } from './socketService.js';

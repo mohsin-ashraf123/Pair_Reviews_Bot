@@ -13,7 +13,7 @@ import {
   isNonWorkingDay,
 } from './pairService.js';
 import { config } from '../config/appConfig.js';
-import { sendMatrixMessage } from './matrixService.js';
+import { sendMatrixMessage } from './matrixGateway.js';
 import { logOutgoingMessage } from './roomMessageService.js';
 import {
   ensureDailyReview,

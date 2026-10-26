@@ -1,6 +1,6 @@
 import MemberRoom from '../models/MemberRoom.js';
 import { config } from '../config/appConfig.js';
-import { joinMatrixRoom } from './matrixService.js';
+import { joinMatrixRoom } from './matrixGateway.js';
 
 let roomIdToMember = new Map();
 let memberToRoomId = new Map();

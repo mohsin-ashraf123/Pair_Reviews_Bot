@@ -22,6 +22,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5001;
 const HOST = '0.0.0.0';
 let pairRoutesLoadError = null;
+let pairRouter = null;
 
 app.use(cors());
 app.use(express.json());
@@ -44,19 +45,27 @@ app.get('/api/health', (req, res) => {
     },
     pairApi: pairRoutesLoadError
       ? { ready: false, error: pairRoutesLoadError }
-      : { ready: true },
+      : { ready: Boolean(pairRouter) },
   });
 });
 
 app.get('/api/ready', (req, res) => {
   const mongoReady = mongoose.connection.readyState === 1;
-  res.status(mongoReady ? 200 : 503).json({
-    ready: mongoReady,
+  const ready = mongoReady && Boolean(pairRouter);
+  res.status(ready ? 200 : 503).json({
+    ready,
     mongo: mongoReady ? 'connected' : 'disconnected',
+    pairApi: Boolean(pairRouter),
   });
 });
 
 app.post('/api/auth/login', loginDashboard);
+app.use('/api/pairs', requireDashboardAuth, (req, res, next) => {
+  if (pairRouter) return pairRouter(req, res, next);
+  return res.status(503).json({ message: pairRoutesLoadError
+    ? 'Pair API could not start. Check /api/health and application logs.'
+    : 'Pair API is starting. Please retry shortly.' });
+});
 
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
@@ -113,7 +122,6 @@ const bootBackgroundServices = async () => {
     console.error(
       'HTTP server is up but DB/scheduler may be unavailable — check Railway Variables.'
     );
-    // Still start countdowns so the dashboard isn't fully dead.
   }
 
   if (!config.runMatrixBot) {
@@ -170,7 +178,7 @@ const start = async () => {
   // listener is live keeps the dashboard and health check available if a new
   // hosting provider is missing an optional crypto runtime dependency.
   import('./routes/pairs.js')
-    .then(({ default: pairRoutes }) => app.use('/api/pairs', requireDashboardAuth, pairRoutes))
+    .then(({ default: pairRoutes }) => { pairRouter = pairRoutes; })
     .catch((error) => {
       pairRoutesLoadError = error?.message || String(error);
       console.error('[routes] Pair API unavailable:', error?.stack || error);

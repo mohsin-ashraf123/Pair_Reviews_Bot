@@ -10,7 +10,7 @@ import {
   formatWrongPairAlert,
   handleReviewMessageDeleted,
 } from './reviewService.js';
-import { sendMatrixMessage, sendMatrixMessageToRoom } from './matrixService.js';
+import { sendMatrixMessage, sendMatrixMessageToRoom } from './matrixGateway.js';
 import {
   emitRoomMessage,
   emitRoomMessageDeleted,

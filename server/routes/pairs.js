@@ -23,7 +23,7 @@ import { getTodayReviewState } from '../services/reviewService.js';
 import { getLiveRoomMessages, getArchivedReviewMessages } from '../services/roomMessageService.js';
 import RoomMessage from '../models/RoomMessage.js';
 import DailyReview from '../models/DailyReview.js';
-import { verifyMatrixConnection } from '../services/matrixService.js';
+import { verifyMatrixConnection } from '../services/matrixGateway.js';
 import { getScheduledMessagesInfo } from '../services/scheduleInfoService.js';
 import {
   getMonthlyPerformance,

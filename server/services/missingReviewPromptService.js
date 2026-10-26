@@ -2,7 +2,7 @@ import DailyReview from '../models/DailyReview.js';
 import MissingReviewPrompt from '../models/MissingReviewPrompt.js';
 import { formatDisplayDate, getKarachiDateKey } from './pairService.js';
 import { getPendingPairs, buildReviewState } from './reviewService.js';
-import { sendMatrixMessageToRoom } from './matrixService.js';
+import { sendMatrixMessageToRoom } from './matrixGateway.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate, emitReviewUpdate } from './socketService.js';

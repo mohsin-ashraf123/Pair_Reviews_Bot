@@ -4,7 +4,7 @@ import RoomMessage from '../models/RoomMessage.js';
 import { config } from '../config/appConfig.js';
 import { formatDisplayDate, getKarachiDateKey } from './pairService.js';
 import { getPendingPairs, getSubmittedPairs, buildPairKey, buildReviewState, recordReviewFromMessage, recomputeReviewedMembers } from './reviewService.js';
-import { sendMatrixMessageToRoom } from './matrixService.js';
+import { sendMatrixMessageToRoom } from './matrixGateway.js';
 import { getRoomIdForMember, touchMemberRoom } from './memberRoomService.js';
 import { logMemberRoomMessage } from './roomMessageService.js';
 import { emitMemberRoomUpdate, emitReviewUpdate } from './socketService.js';

@@ -26,7 +26,7 @@ import {
   joinMatrixRoom,
   sendMatrixMessageToRoom,
   sendMatrixImage,
-} from './matrixService.js';
+} from './matrixGateway.js';
 import puppeteer from 'puppeteer';
 import { logOutgoingMessage } from './roomMessageService.js';
 

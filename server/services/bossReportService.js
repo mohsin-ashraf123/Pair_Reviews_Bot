@@ -10,7 +10,7 @@ import { analyzeMeetingDay } from './aiAnalyzeService.js';
 import {
   sendMatrixMessageToRoom,
   joinMatrixRoom,
-} from './matrixService.js';
+} from './matrixGateway.js';
 import { logOutgoingMessage } from './roomMessageService.js';
 import {
   claimCronJob,

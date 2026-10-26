@@ -15,7 +15,7 @@ import { isNoIssuesReview } from './discussionPromptService.js';
 import {
   getMatrixClient,
   sendMatrixThreadReply,
-} from './matrixService.js';
+} from './matrixGateway.js';
 import { logOutgoingMessage } from './roomMessageService.js';
 import {
   claimCronJob,

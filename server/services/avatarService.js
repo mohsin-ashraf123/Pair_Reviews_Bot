@@ -1,6 +1,6 @@
 import { config } from '../config/appConfig.js';
 import { getMatrixIdForMember } from './memberService.js';
-import { getMatrixClient } from './matrixService.js';
+import { getMatrixClient } from './matrixGateway.js';
 
 const avatarMetaCache = new Map(); // member -> { mxc, at }
 const avatarBytesCache = new Map(); // member -> { buffer, contentType, at }
