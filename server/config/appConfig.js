@@ -113,6 +113,7 @@ const onRailway = Boolean(
 // Production service date when the eight-member rotation was activated.
 export const ROSTER_CHANGE_DATE = '2026-10-08';
 export const SOLO_ROSTER_DATE = '2026-10-14';
+export const FARHAN_REMOVAL_DATE = '2026-10-26';
 const legacyDevelopers = parseList(process.env.DEVELOPERS, ['Uzair', 'Mohsin', 'Saad', 'Farhan', 'Faz', 'Hamza']);
 
 export const config = {
@@ -184,7 +185,8 @@ export const isMatrixConfigured = () =>
   );
 
 export const getDevelopersForDate = (dateKey = '9999-12-31') =>
-  dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE ? config.legacyDevelopers : config.developers;
+  dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE ? config.legacyDevelopers
+    : dateKey.replace(/^TEST-/, '') >= FARHAN_REMOVAL_DATE ? config.developers.filter(name => name !== 'Farhan') : config.developers;
 export const getQaForDate = (dateKey = '9999-12-31') => dateKey.replace(/^TEST-/, '') >= SOLO_ROSTER_DATE
   ? config.qaTeam.filter(name => name.toLowerCase() !== 'habiba') : config.qaTeam;
 export const getAllMembers = (dateKey) => [...getDevelopersForDate(dateKey), ...getQaForDate(dateKey)];

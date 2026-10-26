@@ -304,9 +304,10 @@ export const buildDailyPairsFromDateKey = (dateKey) => {
       previous = new Set(selected.map(canonicalPairKey));
       for (const key of previous) used.set(key, (used.get(key) || 0) + 1);
     }
-    const allPairs = [['Farhan'], ...selected];
+    const solo = developers.includes('Farhan') ? [['Farhan']] : [];
+    const allPairs = [...solo, ...selected];
     return { dateKey, dayIndex, lead: getLead(dayIndex, [...developers, ...qa]),
-      developerPairs: [['Farhan'], selected[0]], qaPair: [], mixedPair: [],
+      developerPairs: [...solo, selected[0]], qaPair: [], mixedPair: [],
       mixedPairs: selected.slice(1), allPairs };
   }
   const legacy = dateKey.replace(/^TEST-/, '') < ROSTER_CHANGE_DATE;
