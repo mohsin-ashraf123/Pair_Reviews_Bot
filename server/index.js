@@ -21,6 +21,7 @@ const clientDist = path.join(__dirname, '../client/dist');
 const app = express();
 const PORT = Number(process.env.PORT) || 5001;
 const HOST = '0.0.0.0';
+let pairRoutesLoadError = null;
 
 app.use(cors());
 app.use(express.json());
@@ -41,6 +42,9 @@ app.get('/api/health', (req, res) => {
       cronScheduler: Boolean(config.enableCronScheduler),
       matrixBot: Boolean(config.runMatrixBot),
     },
+    pairApi: pairRoutesLoadError
+      ? { ready: false, error: pairRoutesLoadError }
+      : { ready: true },
   });
 });
 
@@ -167,7 +171,10 @@ const start = async () => {
   // hosting provider is missing an optional crypto runtime dependency.
   import('./routes/pairs.js')
     .then(({ default: pairRoutes }) => app.use('/api/pairs', requireDashboardAuth, pairRoutes))
-    .catch((error) => console.error('[routes] Pair API unavailable:', error?.stack || error));
+    .catch((error) => {
+      pairRoutesLoadError = error?.message || String(error);
+      console.error('[routes] Pair API unavailable:', error?.stack || error);
+    });
 
   // Kick off DB/Matrix after the port is open so Railway health passes.
   bootBackgroundServices().catch((error) =>
