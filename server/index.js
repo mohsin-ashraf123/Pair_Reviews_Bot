@@ -12,17 +12,8 @@ import mongoose from 'mongoose';
 import './config/appConfig.js';
 import { config } from './config/appConfig.js';
 import connectDB from './config/db.js';
-import pairRoutes from './routes/pairs.js';
 import { loginDashboard, requireDashboardAuth } from './services/dashboardAuth.js';
-import { startPairScheduler } from './services/schedulerService.js';
-import { warmMatrixClient } from './services/matrixService.js';
 import { initSocketServer } from './services/socketService.js';
-import { seedMemberRooms, joinMemberRooms } from './services/memberRoomService.js';
-import {
-  joinBossRoom,
-  healDeliveredBossReports,
-} from './services/bossReportService.js';
-import { ensureHolidayCache } from './services/holidayService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '../client/dist');
@@ -62,7 +53,6 @@ app.get('/api/ready', (req, res) => {
 });
 
 app.post('/api/auth/login', loginDashboard);
-app.use('/api/pairs', requireDashboardAuth, pairRoutes);
 
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
@@ -92,6 +82,10 @@ const withTimeout = (promise, ms, label) =>
 const bootBackgroundServices = async () => {
   try {
     await withTimeout(connectDB(), 30_000, 'MongoDB connect');
+    const { ensureHolidayCache } = await import('./services/holidayService.js');
+    const { seedMemberRooms } = await import('./services/memberRoomService.js');
+    const { startPairScheduler } = await import('./services/schedulerService.js');
+    const { healDeliveredBossReports } = await import('./services/bossReportService.js');
     await ensureHolidayCache().catch((error) =>
       console.warn(`[holiday] Cache load failed: ${error.message}`)
     );
@@ -116,11 +110,6 @@ const bootBackgroundServices = async () => {
       'HTTP server is up but DB/scheduler may be unavailable — check Railway Variables.'
     );
     // Still start countdowns so the dashboard isn't fully dead.
-    try {
-      startPairScheduler();
-    } catch {
-      // ignore
-    }
   }
 
   if (!config.runMatrixBot) {
@@ -134,6 +123,9 @@ const bootBackgroundServices = async () => {
   setTimeout(() => {
     (async () => {
       try {
+        const { joinMemberRooms } = await import('./services/memberRoomService.js');
+        const { joinBossRoom } = await import('./services/bossReportService.js');
+        const { warmMatrixClient } = await import('./services/matrixService.js');
         await joinMemberRooms().catch((error) =>
           console.error('Member room join failed:', error.message)
         );
@@ -169,6 +161,13 @@ const start = async () => {
       resolve();
     });
   });
+
+  // Route modules pull in the Matrix/E2EE SDK. Loading them only after the
+  // listener is live keeps the dashboard and health check available if a new
+  // hosting provider is missing an optional crypto runtime dependency.
+  import('./routes/pairs.js')
+    .then(({ default: pairRoutes }) => app.use('/api/pairs', requireDashboardAuth, pairRoutes))
+    .catch((error) => console.error('[routes] Pair API unavailable:', error?.stack || error));
 
   // Kick off DB/Matrix after the port is open so Railway health passes.
   bootBackgroundServices().catch((error) =>

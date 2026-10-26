@@ -11,6 +11,6 @@
     "install:client": "npm install --prefix client --include=dev",
     "build:client": "npm run build --prefix client",
     "build": "npm run install:client && npm run build:client",
-    "start": "node server/index.js"
+    "start": "node --enable-source-maps --trace-uncaught server/index.js"
   }
 }
