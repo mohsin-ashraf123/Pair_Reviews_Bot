@@ -70,6 +70,8 @@ export const buildDeviceArchive = (session) => {
 };
 
 export const persistMatrixDeviceState = async (session) => {
+  // Recovery workers may keep device credentials on disk only.
+  if (process.env.MATRIX_DEVICE_PERSIST === 'false') return false;
   if (!mongoReady() || !session?.deviceId) return false;
 
   try {
@@ -110,6 +112,7 @@ export const persistMatrixDeviceState = async (session) => {
  * so we reuse the same Element device instead of password-logging again.
  */
 export const restoreMatrixDeviceState = async () => {
+  if (process.env.MATRIX_DEVICE_PERSIST === 'false') return null;
   if (!mongoReady()) return null;
 
   try {
